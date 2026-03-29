@@ -26,6 +26,186 @@ final class ClickThroughView: NSView {
     }
 }
 
+// MARK: - Drag handle view
+
+@available(macOS 14.2, *)
+@MainActor
+final class DragHandleView: NSView {
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 14) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let dotColor = NSColor.tertiaryLabelColor
+        ctx.setFillColor(dotColor.cgColor)
+
+        // Draw a 3x2 dot grid centered in the view
+        let dotSize: CGFloat = 2.5
+        let spacingX: CGFloat = 5
+        let spacingY: CGFloat = 4
+        let cols = 3
+        let rows = 2
+        let totalW = CGFloat(cols - 1) * spacingX + dotSize
+        let totalH = CGFloat(rows - 1) * spacingY + dotSize
+        let startX = (bounds.width - totalW) / 2
+        let startY = (bounds.height - totalH) / 2
+
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let x = startX + CGFloat(col) * spacingX
+                let y = startY + CGFloat(row) * spacingY
+                ctx.fillEllipse(in: CGRect(x: x, y: y, width: dotSize, height: dotSize))
+            }
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+}
+
+// MARK: - Drag-and-drop band column
+
+private let bandDragType = NSPasteboard.PasteboardType("com.iqualize.band")
+
+@available(macOS 14.2, *)
+@MainActor
+final class DraggableBandColumn: NSStackView, NSDraggingSource {
+    var bandIndex: Int = 0
+    let dragHandle = DragHandleView()
+    private var isDraggingFromHandle = false
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    func setupHandle() {
+        dragHandle.wantsLayer = true
+        dragHandle.layer?.cornerRadius = 3
+        dragHandle.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        dragHandle.layer?.borderWidth = 0.5
+        dragHandle.layer?.borderColor = NSColor.separatorColor.cgColor
+        dragHandle.toolTip = "Drag to reorder"
+        dragHandle.translatesAutoresizingMaskIntoConstraints = false
+        // Match input width
+        dragHandle.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let loc = convert(event.locationInWindow, from: nil)
+        let handleFrame = dragHandle.convert(dragHandle.bounds, to: self)
+        isDraggingFromHandle = handleFrame.contains(loc)
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDraggingFromHandle else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        // Highlight the column being dragged
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.1).cgColor
+
+        let item = NSDraggingItem(pasteboardWriter: "\(bandIndex)" as NSString)
+        let snapshot = bitmapImageRepForCachingDisplay(in: bounds)!
+        cacheDisplay(in: bounds, to: snapshot)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(snapshot)
+        item.setDraggingFrame(bounds, contents: image)
+
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        layer?.backgroundColor = nil
+        isDraggingFromHandle = false
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isDraggingFromHandle = false
+        layer?.backgroundColor = nil
+        super.mouseUp(with: event)
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+final class BandDropTarget: NSStackView {
+    var onReorder: ((_ from: Int, _ to: Int) -> Void)?
+    private var dropIndex: Int?
+    private let indicator = NSView()
+
+    func setupDropTarget() {
+        registerForDraggedTypes([bandDragType, .string])
+        indicator.wantsLayer = true
+        indicator.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        indicator.isHidden = true
+        addSubview(indicator)
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        indicator.isHidden = false
+        return .move
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let loc = convert(sender.draggingLocation, from: nil)
+        // Find insertion index among band columns (skip + buttons)
+        let columns = arrangedSubviews.filter { $0 is DraggableBandColumn }
+        var insertionIndex = columns.count
+        for (i, col) in columns.enumerated() {
+            let mid = col.frame.midX
+            if loc.x < mid {
+                insertionIndex = i
+                break
+            }
+        }
+        dropIndex = insertionIndex
+
+        // Position indicator
+        let x: CGFloat
+        if insertionIndex < columns.count {
+            x = columns[insertionIndex].frame.minX - 1
+        } else if let last = columns.last {
+            x = last.frame.maxX + 1
+        } else {
+            x = 0
+        }
+        indicator.frame = NSRect(x: x, y: 0, width: 2, height: bounds.height)
+        indicator.isHidden = false
+
+        return .move
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        indicator.isHidden = true
+        dropIndex = nil
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        indicator.isHidden = true
+        guard let dropIdx = dropIndex,
+              let str = sender.draggingPasteboard.string(forType: .string),
+              let fromIndex = Int(str) else { return false }
+
+        var toIndex = dropIdx
+        // Adjust: if dropping after the source, account for removal
+        if toIndex > fromIndex { toIndex -= 1 }
+        if toIndex != fromIndex {
+            onReorder?(fromIndex, toIndex)
+        }
+        dropIndex = nil
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        indicator.isHidden = true
+        dropIndex = nil
+    }
+}
+
 @available(macOS 14.2, *)
 @MainActor
 final class EQWindowController: NSWindowController, NSTextFieldDelegate {
@@ -34,7 +214,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     private var eqToggle: NSButton!
     private var presetPicker: NSPopUpButton!
-    private var slidersContainer: NSStackView!
+    private var slidersContainer: BandDropTarget!
     private var sliders: [NSSlider] = []
     private var gainLabels: [UnitTextField] = []
     private var freqLabels: [UnitTextField] = []
@@ -171,12 +351,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         topDivider.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32).isActive = true
 
         // Row 2: Sliders area
-        slidersContainer = NSStackView()
+        slidersContainer = BandDropTarget()
         slidersContainer.orientation = .horizontal
         slidersContainer.alignment = .bottom
         slidersContainer.distribution = .fillEqually
         slidersContainer.spacing = 2
         slidersContainer.translatesAutoresizingMaskIntoConstraints = false
+        slidersContainer.setupDropTarget()
+        slidersContainer.onReorder = { [weak self] from, to in
+            self?.reorderBand(from: from, to: to)
+        }
 
         mainStack.addArrangedSubview(slidersContainer)
         NSLayoutConstraint.activate([
@@ -267,10 +451,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
 
         for (i, band) in bands.enumerated() {
-            let column = NSStackView()
+            let column = DraggableBandColumn()
             column.orientation = .vertical
             column.alignment = .centerX
             column.spacing = 4
+            column.bandIndex = i
 
             let gainLabel = UnitTextField(string: band.gainLabel)
             gainLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
@@ -329,10 +514,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
             qLabels.append(qLabel)
 
+            column.setupHandle()
             column.addArrangedSubview(gainLabel)
             column.addArrangedSubview(slider)
             column.addArrangedSubview(freqLabel)
             column.addArrangedSubview(qLabel)
+            column.addArrangedSubview(column.dragHandle)
 
             // Right-click context menu
             let menu = NSMenu()
@@ -354,6 +541,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             let deleteItem = NSMenuItem(title: "Delete Band", action: #selector(deleteBandFromMenu(_:)), keyEquivalent: "")
             deleteItem.target = self
             deleteItem.tag = i
+            let redTitle = NSAttributedString(string: "Delete Band", attributes: [
+                .foregroundColor: NSColor.systemRed,
+                .font: NSFont.menuFont(ofSize: 0)
+            ])
+            deleteItem.attributedTitle = redTitle
             menu.addItem(deleteItem)
             column.menu = menu
 
@@ -539,6 +731,19 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         ])
 
         return wrapper
+    }
+
+    private func reorderBand(from: Int, to: Int) {
+        guard from != to,
+              from < audioEngine.activePreset.bands.count,
+              to <= audioEngine.activePreset.bands.count else { return }
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        let band = preset.bands.remove(at: from)
+        preset.bands.insert(band, at: to)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
     }
 
     @objc private func moveBandLeft(_ sender: NSMenuItem) {
