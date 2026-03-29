@@ -41,10 +41,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var qLabels: [UnitTextField] = []
     private var clippingCheckbox: NSButton!
     private var lowLatencyCheckbox: NSButton!
+    private var maxGainPicker: NSPopUpButton!
     private var outputLabel: NSTextField!
-    private var deleteButton: NSButton!
-    private var saveButton: NSButton!
+    private var newButton: NSButton!
+    private var saveControl: NSSegmentedControl!
+    private var saveDropdownMenu: NSMenu!
     private var resetButton: NSButton!
+    private var deleteButton: NSButton!
+    private var importExportButton: NSPopUpButton!
 
     /// Snapshot of the preset when it was loaded/saved, for reset.
     private var savedPresetSnapshot: EQPresetData?
@@ -109,18 +113,27 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             mainStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
 
-        // Row 1: Preset picker + Save + Reset + Delete
+        // Row 1: Preset picker + action buttons
         let presetRow = NSStackView()
         presetRow.orientation = .horizontal
-        presetRow.spacing = 8
+        presetRow.spacing = 6
 
-        let presetLabel = NSTextField(labelWithString: "Preset:")
         presetPicker = NSPopUpButton(frame: .zero, pullsDown: false)
         presetPicker.target = self
         presetPicker.action = #selector(presetChanged(_:))
 
-        saveButton = NSButton(title: "Save...", target: self, action: #selector(savePreset(_:)))
-        saveButton.bezelStyle = .rounded
+        newButton = NSButton(title: "New", target: self, action: #selector(newPreset(_:)))
+        newButton.bezelStyle = .rounded
+
+        saveControl = NSSegmentedControl(labels: ["Save", ""], trackingMode: .momentary,
+                                          target: self, action: #selector(saveSegmentClicked(_:)))
+        saveControl.setWidth(50, forSegment: 0)
+        saveControl.setWidth(24, forSegment: 1)
+        saveControl.setShowsMenuIndicator(true, forSegment: 1)
+        saveDropdownMenu = NSMenu()
+        let saveAsItem = NSMenuItem(title: "Save As…", action: #selector(saveAsPreset(_:)), keyEquivalent: "")
+        saveAsItem.target = self
+        saveDropdownMenu.addItem(saveAsItem)
 
         resetButton = NSButton(title: "Reset", target: self, action: #selector(resetPreset(_:)))
         resetButton.bezelStyle = .rounded
@@ -129,11 +142,26 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         deleteButton = NSButton(title: "Delete", target: self, action: #selector(deletePreset(_:)))
         deleteButton.bezelStyle = .rounded
 
-        presetRow.addArrangedSubview(presetLabel)
+        // Import/Export gear menu
+        importExportButton = NSPopUpButton(frame: .zero, pullsDown: true)
+        importExportButton.addItem(withTitle: "")
+        if let gearImage = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "More") {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            importExportButton.item(at: 0)?.image = gearImage.withSymbolConfiguration(config)
+        }
+        let exportItem = NSMenuItem(title: "Export Preset…", action: #selector(exportPreset(_:)), keyEquivalent: "")
+        exportItem.target = self
+        let importItem = NSMenuItem(title: "Import Preset…", action: #selector(importPreset(_:)), keyEquivalent: "")
+        importItem.target = self
+        importExportButton.menu?.addItem(exportItem)
+        importExportButton.menu?.addItem(importItem)
+
         presetRow.addArrangedSubview(presetPicker)
-        presetRow.addArrangedSubview(saveButton)
+        presetRow.addArrangedSubview(newButton)
+        presetRow.addArrangedSubview(saveControl)
         presetRow.addArrangedSubview(resetButton)
         presetRow.addArrangedSubview(deleteButton)
+        presetRow.addArrangedSubview(importExportButton)
         mainStack.addArrangedSubview(presetRow)
 
         // Divider above bands
@@ -183,8 +211,22 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
+        let maxGainLabel = NSTextField(labelWithString: "Max:")
+        maxGainLabel.font = .systemFont(ofSize: 11)
+        maxGainPicker = NSPopUpButton(frame: .zero, pullsDown: false)
+        maxGainPicker.font = .systemFont(ofSize: 11)
+        for db: Float in [6, 12, 18, 24] {
+            maxGainPicker.addItem(withTitle: "±\(Int(db)) dB")
+            maxGainPicker.lastItem?.tag = Int(db)
+        }
+        maxGainPicker.selectItem(withTag: Int(audioEngine.maxGainDB))
+        maxGainPicker.target = self
+        maxGainPicker.action = #selector(maxGainChanged(_:))
+
         bottomRow.addArrangedSubview(eqToggle)
         bottomRow.addArrangedSubview(spacer)
+        bottomRow.addArrangedSubview(maxGainLabel)
+        bottomRow.addArrangedSubview(maxGainPicker)
         bottomRow.addArrangedSubview(lowLatencyCheckbox)
         bottomRow.addArrangedSubview(clippingCheckbox)
 
@@ -245,7 +287,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
             gainLabels.append(gainLabel)
 
-            let slider = NSSlider(value: Double(band.gain), minValue: -12, maxValue: 12,
+            let maxDB = Double(audioEngine.maxGainDB)
+            let slider = NSSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
                                   target: self, action: #selector(sliderMoved(_:)))
             slider.isVertical = true
             slider.numberOfTickMarks = 25
@@ -291,8 +334,23 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             column.addArrangedSubview(freqLabel)
             column.addArrangedSubview(qLabel)
 
-            // Right-click to delete band
+            // Right-click context menu
             let menu = NSMenu()
+
+            if i > 0 {
+                let moveLeft = NSMenuItem(title: "Move Left", action: #selector(moveBandLeft(_:)), keyEquivalent: "")
+                moveLeft.target = self
+                moveLeft.tag = i
+                menu.addItem(moveLeft)
+            }
+            if i < bands.count - 1 {
+                let moveRight = NSMenuItem(title: "Move Right", action: #selector(moveBandRight(_:)), keyEquivalent: "")
+                moveRight.target = self
+                moveRight.tag = i
+                menu.addItem(moveRight)
+            }
+            if menu.items.count > 0 { menu.addItem(.separator()) }
+
             let deleteItem = NSMenuItem(title: "Delete Band", action: #selector(deleteBandFromMenu(_:)), keyEquivalent: "")
             deleteItem.target = self
             deleteItem.tag = i
@@ -333,6 +391,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - Sync UI ↔ Engine
 
     private func syncUIToPreset() {
+        savedPresetSnapshot = audioEngine.activePreset
+        isModified = false
+        resetButton.isEnabled = false
         populatePresetPicker()
         buildSliders()
         updateDeleteButton()
@@ -340,9 +401,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         updateEQToggle()
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
         lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
-        savedPresetSnapshot = audioEngine.activePreset
-        isModified = false
-        resetButton.isEnabled = false
         updateWindowTitle()
     }
 
@@ -395,9 +453,17 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     /// Returns the mutable preset to modify.
     private func forkIfBuiltIn() {
         guard audioEngine.activePreset.isBuiltIn else { return }
+        let baseName = "\(audioEngine.activePreset.name) (Custom)"
+        let existing = presetStore.allPresets.map { $0.name }
+        var forkName = baseName
+        if existing.contains(forkName) {
+            var n = 2
+            while existing.contains("\(baseName) \(n)") { n += 1 }
+            forkName = "\(baseName) \(n)"
+        }
         let custom = EQPresetData(
             id: UUID(),
-            name: "\(audioEngine.activePreset.name) (Custom)",
+            name: forkName,
             bands: audioEngine.activePreset.bands,
             isBuiltIn: false
         )
@@ -444,6 +510,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         state.save()
     }
 
+    @objc private func maxGainChanged(_ sender: NSPopUpButton) {
+        guard let item = sender.selectedItem else { return }
+        audioEngine.maxGainDB = Float(item.tag)
+        var state = iQualizeState.load()
+        state.maxGainDB = audioEngine.maxGainDB
+        state.save()
+        buildSliders()
+    }
+
     private enum AddSide { case left, right }
 
     private func makeAddButton(side: AddSide) -> NSView {
@@ -464,6 +539,28 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         ])
 
         return wrapper
+    }
+
+    @objc private func moveBandLeft(_ sender: NSMenuItem) {
+        let index = sender.tag
+        guard index > 0, index < audioEngine.activePreset.bands.count else { return }
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        preset.bands.swapAt(index, index - 1)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+    }
+
+    @objc private func moveBandRight(_ sender: NSMenuItem) {
+        let index = sender.tag
+        guard index < audioEngine.activePreset.bands.count - 1 else { return }
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        preset.bands.swapAt(index, index + 1)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
     }
 
     @objc private func deleteBandFromMenu(_ sender: NSMenuItem) {
@@ -527,7 +624,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         if gainLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text) {
-                let clamped = min(max(value, -12), 12)
+                let maxDB = audioEngine.maxGainDB
+                let clamped = min(max(value, -maxDB), maxDB)
                 if clamped != band.gain {
                     forkIfBuiltIn()
                     var preset = audioEngine.activePreset
@@ -605,10 +703,48 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         updateWindowTitle()
     }
 
-    @objc private func savePreset(_ sender: NSButton) {
+    @objc private func newPreset(_ sender: NSButton) {
+        let existing = presetStore.allPresets.map { $0.name }
+        var n = 1
+        while existing.contains("Custom EQ \(n)") { n += 1 }
+        let preset = EQPresetData(
+            id: UUID(),
+            name: "Custom EQ \(n)",
+            bands: EQPresetData.flat.bands,
+            isBuiltIn: false
+        )
+        presetStore.saveCustomPreset(preset)
+        audioEngine.activePreset = preset
+        syncUIToPreset()
+        saveState()
+    }
+
+    @objc private func saveSegmentClicked(_ sender: NSSegmentedControl) {
+        if sender.selectedSegment == 0 {
+            savePreset(sender)
+        } else {
+            let point = NSPoint(x: 0, y: sender.bounds.height + 2)
+            saveDropdownMenu.popUp(positioning: nil, at: point, in: sender)
+        }
+    }
+
+    @objc private func savePreset(_ sender: Any) {
+        window?.makeFirstResponder(nil)
+        if audioEngine.activePreset.isBuiltIn {
+            // Built-in: save as new
+            saveAsPreset(sender)
+            return
+        }
+        // Custom preset: save in place
+        presetStore.saveCustomPreset(audioEngine.activePreset)
+        syncUIToPreset()
+        saveState()
+    }
+
+    @objc private func saveAsPreset(_ sender: Any) {
         window?.makeFirstResponder(nil)
         let alert = NSAlert()
-        alert.messageText = "Save Preset"
+        alert.messageText = "Save Preset As"
         alert.informativeText = "Enter a name for this preset:"
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -618,30 +754,26 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             ? "" : audioEngine.activePreset.name
         nameField.placeholderString = "My Custom EQ"
         alert.accessoryView = nameField
-
         alert.window.initialFirstResponder = nameField
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        let name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-
-        if audioEngine.activePreset.isBuiltIn {
-            let newPreset = EQPresetData(
-                id: UUID(),
-                name: name,
-                bands: audioEngine.activePreset.bands,
-                isBuiltIn: false
-            )
-            presetStore.saveCustomPreset(newPreset)
-            audioEngine.activePreset = newPreset
-        } else {
-            var updated = audioEngine.activePreset
-            updated.name = name
-            presetStore.saveCustomPreset(updated)
-            audioEngine.activePreset = updated
+        var name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty {
+            let existing = presetStore.allPresets.map { $0.name }
+            var n = 1
+            while existing.contains("Custom EQ \(n)") { n += 1 }
+            name = "Custom EQ \(n)"
         }
 
+        let newPreset = EQPresetData(
+            id: UUID(),
+            name: name,
+            bands: audioEngine.activePreset.bands,
+            isBuiltIn: false
+        )
+        presetStore.saveCustomPreset(newPreset)
+        audioEngine.activePreset = newPreset
         syncUIToPreset()
         saveState()
     }
@@ -663,6 +795,42 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.activePreset = .flat
         syncUIToPreset()
         saveState()
+    }
+
+    @objc private func exportPreset(_ sender: NSMenuItem) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(audioEngine.activePreset.name).iqpreset"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(audioEngine.activePreset)
+            try data.write(to: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+        }
+    }
+
+    @objc private func importPreset(_ sender: NSMenuItem) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            var preset = try JSONDecoder().decode(EQPresetData.self, from: data)
+            // Give it a new ID to avoid collisions
+            preset = EQPresetData(id: UUID(), name: preset.name, bands: preset.bands, isBuiltIn: false)
+            presetStore.saveCustomPreset(preset)
+            audioEngine.activePreset = preset
+            syncUIToPreset()
+            saveState()
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+        }
     }
 
     private func saveState() {
