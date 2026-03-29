@@ -909,8 +909,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
-        let leftmost = preset.bands.first ?? EQBand(frequency: 100, gain: 0)
-        preset.bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth), at: 0)
+        let freq = preset.suggestNewBandFrequency()
+        let newBand = EQBand(frequency: freq, gain: 0, bandwidth: 1.0)
+        let insertIndex = preset.bands.firstIndex(where: { $0.frequency > freq }) ?? preset.bands.count
+        preset.bands.insert(newBand, at: insertIndex)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
@@ -922,8 +924,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
-        let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
-        preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth))
+        let freq = preset.suggestNewBandFrequency()
+        let newBand = EQBand(frequency: freq, gain: 0, bandwidth: 1.0)
+        let insertIndex = preset.bands.firstIndex(where: { $0.frequency > freq }) ?? preset.bands.count
+        preset.bands.insert(newBand, at: insertIndex)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
