@@ -5,8 +5,17 @@ All notable changes to iQualize will be documented in this file.
 ## [0.11.0] - 2026-03-30
 
 ### Added
+- Accurate biquad frequency response curve using Audio EQ Cookbook formulas, showing the true filter response behind the EQ sliders
+- Per-band ghost fills showing individual filter contribution shapes
+- Anchor dots with drop lines at each band's frequency on the composite curve
+- Split composite fill (boost regions brighter than cut regions)
+- Detailed frequency/dB grid (20Hz–20kHz vertical, 6dB horizontal)
 - American Rap built-in preset (808-heavy sub-bass, mid scoop, vocal presence)
 - German Rap built-in preset (warm mid-bass, vocal clarity, balanced brightness)
+
+### Changed
+- Spline curve (connecting slider knobs) now rendered as a dashed gray line to distinguish from the biquad response
+- install.sh now re-signs the app when only Info.plist changes (fixes launch failures after version bump)
 
 ## [0.10.0] - 2026-03-30
 
