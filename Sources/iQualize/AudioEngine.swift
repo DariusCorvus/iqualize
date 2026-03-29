@@ -91,6 +91,10 @@ final class AudioEngine {
         didSet { applyBands() }
     }
 
+    var lowLatency: Bool = false {
+        didSet { if isRunning { rebuildEngine() } }
+    }
+
     init() {
         do {
             let deviceID = try getDefaultOutputDeviceID()
@@ -233,7 +237,8 @@ final class AudioEngine {
         }
 
         // 5. Set up ring buffer + AVAudioEngine with EQ
-        let ringBuf = AudioRingBuffer(capacityFrames: Int(sampleRate * 0.5), channels: Int(channels))
+        let bufferSeconds = lowLatency ? 0.05 : 0.5
+        let ringBuf = AudioRingBuffer(capacityFrames: Int(sampleRate * bufferSeconds), channels: Int(channels))
         self.ringBuffer = ringBuf
         rtRingBuffer = ringBuf
         rtChannelCount = channels

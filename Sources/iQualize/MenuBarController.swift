@@ -31,6 +31,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             audioEngine.activePreset = preset
         }
         audioEngine.preventClipping = state.preventClipping
+        audioEngine.lowLatency = state.lowLatency
         audioEngine.setEnabled(true)
         updateIcon()
     }
@@ -75,6 +76,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         clippingItem.target = self
         clippingItem.state = audioEngine.preventClipping ? .on : .off
         menu.addItem(clippingItem)
+
+        // Low Latency toggle
+        let latencyItem = NSMenuItem(title: "Low Latency",
+                                      action: #selector(toggleLowLatency(_:)), keyEquivalent: "")
+        latencyItem.target = self
+        latencyItem.state = audioEngine.lowLatency ? .on : .off
+        menu.addItem(latencyItem)
 
         menu.addItem(.separator())
 
@@ -144,6 +152,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     @objc private func toggleClipping(_ sender: NSMenuItem) {
         audioEngine.preventClipping.toggle()
         state.preventClipping = audioEngine.preventClipping
+        state.save()
+    }
+
+    @objc private func toggleLowLatency(_ sender: NSMenuItem) {
+        audioEngine.lowLatency.toggle()
+        state.lowLatency = audioEngine.lowLatency
         state.save()
     }
 

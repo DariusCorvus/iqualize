@@ -1,17 +1,20 @@
 #!/bin/bash
 # Build iQualize and install to ~/Applications for Spotlight/Dock access
-
 set -e
 
+cd "$(dirname "$0")"
+
 echo "Building iQualize..."
-xcodebuild -project iQualize.xcodeproj -scheme iQualize -configuration Release build 2>&1 | tail -5
+swift build -c release 2>&1 | tail -5
 
-APP_PATH=$(xcodebuild -project iQualize.xcodeproj -scheme iQualize -configuration Release -showBuildSettings 2>/dev/null | grep " BUILT_PRODUCTS_DIR" | awk '{print $3}')
+APP=/Applications/iQualize.app
+mkdir -p "$APP/Contents/MacOS"
 
-mkdir -p ~/Applications
+# Copy binary — always overwrites, keeping the same app identity for macOS permissions
+cp -f .build/release/iQualize "$APP/Contents/MacOS/iQualize"
 
-echo "Installing to ~/Applications/iQualize.app..."
-rm -rf ~/Applications/iQualize.app
-cp -R "$APP_PATH/iQualize.app" ~/Applications/iQualize.app
+# Always update Info.plist so version stays current
+cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
 
-echo "Done! iQualize is now available in Spotlight and can be dragged to the Dock."
+echo "Installed to /Applications/iQualize.app"
+echo "You can drag it to the Dock or find it in Spotlight."

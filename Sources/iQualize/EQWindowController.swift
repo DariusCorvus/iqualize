@@ -16,6 +16,7 @@ final class EQWindowController: NSWindowController {
     private var gainLabels: [NSTextField] = []
     private var freqLabels: [NSTextField] = []
     private var clippingCheckbox: NSButton!
+    private var lowLatencyCheckbox: NSButton!
     private var outputLabel: NSTextField!
     private var deleteButton: NSButton!
     private var saveButton: NSButton!
@@ -150,6 +151,10 @@ final class EQWindowController: NSWindowController {
                                      target: self, action: #selector(toggleClipping(_:)))
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
 
+        lowLatencyCheckbox = NSButton(checkboxWithTitle: "Low Latency",
+                                       target: self, action: #selector(toggleLowLatency(_:)))
+        lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
+
         let bottomRow = NSStackView()
         bottomRow.orientation = .horizontal
         bottomRow.distribution = .fill
@@ -162,6 +167,7 @@ final class EQWindowController: NSWindowController {
 
         bottomRow.addArrangedSubview(eqToggle)
         bottomRow.addArrangedSubview(spacer)
+        bottomRow.addArrangedSubview(lowLatencyCheckbox)
         bottomRow.addArrangedSubview(clippingCheckbox)
 
         mainStack.addArrangedSubview(bottomRow)
@@ -245,6 +251,7 @@ final class EQWindowController: NSWindowController {
         updateOutputLabel()
         updateEQToggle()
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
+        lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
         savedPresetSnapshot = audioEngine.activePreset
         isModified = false
         resetButton.isEnabled = false
@@ -345,6 +352,13 @@ final class EQWindowController: NSWindowController {
         audioEngine.preventClipping = sender.state == .on
         var state = iQualizeState.load()
         state.preventClipping = audioEngine.preventClipping
+        state.save()
+    }
+
+    @objc private func toggleLowLatency(_ sender: NSButton) {
+        audioEngine.lowLatency = sender.state == .on
+        var state = iQualizeState.load()
+        state.lowLatency = audioEngine.lowLatency
         state.save()
     }
 
