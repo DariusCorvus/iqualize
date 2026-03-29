@@ -330,11 +330,13 @@ final class FrequencyResponseView: NSView {
             let curvePath = CGMutablePath()
             curvePath.move(to: curvePoints[0])
             for pt in curvePoints.dropFirst() { curvePath.addLine(to: pt) }
-            let strokeAlpha: CGFloat = isBackdrop ? 0.5 : 0.9
-            ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(strokeAlpha).cgColor)
-            ctx.setLineWidth(isBackdrop ? 1.0 : 1.5)
+            let strokeAlpha: CGFloat = isBackdrop ? 0.4 : 0.6
+            ctx.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(strokeAlpha).cgColor)
+            ctx.setLineWidth(isBackdrop ? 0.75 : 1.0)
+            ctx.setLineDash(phase: 0, lengths: [4, 3])
             ctx.addPath(curvePath)
             ctx.strokePath()
+            ctx.setLineDash(phase: 0, lengths: [])
         }
 
         // Band markers (skip in backdrop mode — sliders serve as markers)
