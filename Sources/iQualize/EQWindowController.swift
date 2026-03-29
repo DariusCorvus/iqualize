@@ -249,6 +249,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         window.title = "iQualize"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 480, height: 420)
 
         super.init(window: window)
 
@@ -281,7 +282,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         let mainStack = NSStackView()
         mainStack.orientation = .vertical
-        mainStack.alignment = .leading
+        mainStack.alignment = .centerX
         mainStack.spacing = 12
         mainStack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         mainStack.translatesAutoresizingMaskIntoConstraints = false
@@ -350,12 +351,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         presetRow.addArrangedSubview(deleteButton)
         presetRow.addArrangedSubview(importExportButton)
         mainStack.addArrangedSubview(presetRow)
+        presetRow.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        presetRow.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Divider above bands
         let topDivider = NSBox()
         topDivider.boxType = .separator
         mainStack.addArrangedSubview(topDivider)
-        topDivider.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32).isActive = true
+        topDivider.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        topDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Row 2: Sliders area
         slidersContainer = BandDropTarget()
@@ -370,15 +374,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
 
         mainStack.addArrangedSubview(slidersContainer)
-        NSLayoutConstraint.activate([
-            slidersContainer.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32),
-        ])
+        slidersContainer.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        slidersContainer.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Divider below bands
         let bottomDivider = NSBox()
         bottomDivider.boxType = .separator
         mainStack.addArrangedSubview(bottomDivider)
-        bottomDivider.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32).isActive = true
+        bottomDivider.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        bottomDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Row 3: Bottom bar — EQ Enabled (left) + Prevent Clipping (right)
         eqToggle = NSButton(checkboxWithTitle: "EQ Enabled", target: self, action: #selector(toggleEQ(_:)))
@@ -422,9 +426,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(clippingCheckbox)
 
         mainStack.addArrangedSubview(bottomRow)
-        NSLayoutConstraint.activate([
-            bottomRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32),
-        ])
+        bottomRow.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        bottomRow.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Row 5: Output device label
         outputLabel = NSTextField(labelWithString: "Output: \(audioEngine.outputDeviceName)")
@@ -596,10 +599,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
         }
 
-        let neededWidth = CGFloat(bands.count * 40 + 32)
+        let bandsWidth = CGFloat(bands.count * 40 + 32)
         if let window = self.window {
             var frame = window.frame
-            let newWidth = max(neededWidth, 400)
+            let newWidth = max(bandsWidth, window.minSize.width)
             frame.size.width = newWidth
             window.setFrame(frame, display: true, animate: true)
         }
@@ -1057,27 +1060,40 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func importPreset(_ sender: Any) {
-        // Use osascript to show a native open dialog
+        // Use osascript to show a native open dialog with multiple selection
         let script = """
-            set f to POSIX path of (choose file of type {"json", "iqpreset"} with prompt "Import Preset")
-            return f
+            set fileList to choose file of type {"json", "iqpreset"} with prompt "Import Presets" with multiple selections allowed
+            set output to ""
+            repeat with f in fileList
+                set output to output & POSIX path of f & linefeed
+            end repeat
+            return output
             """
-        guard let path = runAppleScript(script) else { return }
-        let url = URL(fileURLWithPath: path)
-        do {
-            let data = try Data(contentsOf: url)
-            let decoded = try JSONDecoder().decode(EQPresetData.self, from: data)
-            var importName = decoded.name
+        guard let output = runAppleScript(script), !output.isEmpty else { return }
+        let paths = output.components(separatedBy: "\n").filter { !$0.isEmpty }
 
-            // Check for name conflict with custom presets only (built-in presets are not affected)
-            let customNames = Set(presetStore.customPresets.map(\.name))
-            if customNames.contains(importName) {
+        var lastImported: EQPresetData?
+        var importCount = 0
+        var skipCount = 0
+
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            do {
+                let data = try Data(contentsOf: url)
+                let decoded = try JSONDecoder().decode(EQPresetData.self, from: data)
+                var importName = decoded.name
+
+                // Show import dialog with name field
+                let customNames = Set(presetStore.customPresets.map(\.name))
+                let nameExists = customNames.contains(importName)
+
                 let alert = NSAlert()
-                alert.messageText = "A preset named \"\(importName)\" already exists."
-                alert.informativeText = "Enter a new name or click Replace to overwrite."
-                alert.addButton(withTitle: "Import")
-                alert.addButton(withTitle: "Replace Existing")
-                alert.addButton(withTitle: "Cancel")
+                alert.messageText = nameExists
+                    ? "A preset named \"\(importName)\" already exists."
+                    : "Import \"\(importName)\""
+                alert.informativeText = "You can change the preset name before importing."
+                alert.addButton(withTitle: nameExists ? "Overwrite" : "Import")
+                alert.addButton(withTitle: "Skip")
 
                 let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
                 nameField.stringValue = importName
@@ -1086,30 +1102,62 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 alert.accessoryView = nameField
                 alert.window.initialFirstResponder = nameField
 
-                let response = alert.runModal()
-                if response == .alertThirdButtonReturn { return } // Cancel
-
-                if response == .alertFirstButtonReturn {
-                    // Import with new name
-                    let newName = nameField.stringValue.trimmingCharacters(in: .whitespaces)
-                    if newName.isEmpty { return }
-                    importName = newName
-                } else {
-                    // Replace — delete the existing preset with that name
-                    if let existing = presetStore.allPresets.first(where: { $0.name == importName }), !existing.isBuiltIn {
-                        presetStore.deleteCustomPreset(id: existing.id)
-                    }
+                // Dynamically update button label as user types
+                let actionButton = alert.buttons[0]
+                let observer = NotificationCenter.default.addObserver(
+                    forName: NSControl.textDidChangeNotification,
+                    object: nameField, queue: .main
+                ) { _ in
+                    let current = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+                    actionButton.title = customNames.contains(current) ? "Overwrite" : "Import"
                 }
-            }
 
-            let preset = EQPresetData(id: UUID(), name: importName, bands: decoded.bands, isBuiltIn: false)
-            presetStore.saveCustomPreset(preset)
+                let response = alert.runModal()
+                NotificationCenter.default.removeObserver(observer)
+                if response == .alertSecondButtonReturn {
+                    skipCount += 1
+                    continue // Skip
+                }
+
+                let finalName = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+                if finalName.isEmpty {
+                    skipCount += 1
+                    continue
+                }
+                importName = finalName
+
+                // If the final name matches an existing preset, confirm overwrite
+                if let existing = presetStore.customPresets.first(where: { $0.name == importName }) {
+                    let confirm = NSAlert()
+                    confirm.messageText = "Overwrite \"\(importName)\"?"
+                    confirm.informativeText = "This will replace the existing preset with the imported one."
+                    confirm.addButton(withTitle: "Overwrite")
+                    confirm.addButton(withTitle: "Cancel")
+                    confirm.alertStyle = .warning
+
+                    if confirm.runModal() != .alertFirstButtonReturn {
+                        skipCount += 1
+                        continue
+                    }
+                    presetStore.deleteCustomPreset(id: existing.id)
+                }
+
+                let preset = EQPresetData(id: UUID(), name: importName, bands: decoded.bands, isBuiltIn: false)
+                presetStore.saveCustomPreset(preset)
+                lastImported = preset
+                importCount += 1
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.informativeText = "Failed to import \(url.lastPathComponent): \(error.localizedDescription)"
+                alert.runModal()
+            }
+        }
+
+        // Switch to the last imported preset
+        if let preset = lastImported {
             audioEngine.activePreset = preset
             syncUIToPreset()
             saveState()
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
         }
     }
 
