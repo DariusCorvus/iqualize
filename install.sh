@@ -21,7 +21,7 @@ else
     # Codesign with stable identity
     SIGN_ID="Apple Development"
     if [ -n "$SIGN_ID" ]; then
-        codesign --force --sign "$SIGN_ID" "$APP" 2>/dev/null && echo "Signed with: $SIGN_ID"
+        codesign --force --sign "$SIGN_ID" --entitlements iQualize.entitlements "$APP" 2>/dev/null && echo "Signed with: $SIGN_ID"
     fi
     echo "Binary updated"
 fi
