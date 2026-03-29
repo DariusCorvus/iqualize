@@ -39,23 +39,9 @@ final class FrequencyResponseView: NSView {
 
     /// Reference slider used to align the curve's gain axis with the slider track.
     weak var referenceSlider: NSSlider?
-    /// Cached slider track Y range in our coordinate system (updated on layout).
-    private var trackMinY: CGFloat = 0
-    private var trackMaxY: CGFloat = 0
 
-    override func layout() {
-        super.layout()
-        guard isBackdrop, let slider = referenceSlider else { return }
-        // Convert slider bounds to our coordinate system
-        let sliderOrigin = slider.convert(CGPoint.zero, to: self)
-        let sliderTop = slider.convert(CGPoint(x: 0, y: slider.bounds.height), to: self)
-        let knobInset = slider.knobThickness / 2.0
-        // Slider value increases bottom-to-top; in our coords, bottom = lower Y
-        let bottom = min(sliderOrigin.y, sliderTop.y)
-        let top = max(sliderOrigin.y, sliderTop.y)
-        trackMinY = bottom + knobInset
-        trackMaxY = top - knobInset
-    }
+    /// All band sliders — used to compute column center X at draw time.
+    var allSliders: [NSSlider] = []
 
     func updateBands(_ bands: [EQBand], maxGainDB: Float) {
         self.bands = bands
@@ -126,19 +112,91 @@ final class FrequencyResponseView: NSView {
         return total
     }
 
+    /// Catmull-Rom spline through band control points in pixel-X space.
+    /// Uses actual column center positions so the curve passes through every handle.
+    private func splinePoints(plotRect: CGRect) -> [CGPoint] {
+        guard !bands.isEmpty, allSliders.count == bands.count else { return [] }
+
+        // Compute column center X positions from actual slider frames
+        let centerXs: [CGFloat] = allSliders.map { slider in
+            let center = slider.convert(
+                CGPoint(x: slider.bounds.midX, y: 0), to: nil)
+            return convert(center, from: nil).x
+        }
+
+        // Build control points: (pixelX, gain)
+        // Anchor at left/right edges at 0 dB
+        var pts: [(x: CGFloat, y: Float)] = [(plotRect.minX, 0)]
+        for (i, band) in bands.enumerated() {
+            pts.append((centerXs[i], band.gain))
+        }
+        pts.append((plotRect.maxX, 0))
+
+        // Sample the Catmull-Rom spline at pixel resolution
+        let sampleCount = 200
+        var result: [CGPoint] = []
+
+        for s in 0...sampleCount {
+            let pixelX = plotRect.minX + CGFloat(s) / CGFloat(sampleCount) * plotRect.width
+
+            // Find segment
+            var seg = 0
+            for i in 1..<pts.count {
+                if pixelX <= pts[i].x { seg = i - 1; break }
+                seg = i - 1
+            }
+
+            let i0 = max(seg - 1, 0)
+            let i1 = seg
+            let i2 = min(seg + 1, pts.count - 1)
+            let i3 = min(seg + 2, pts.count - 1)
+
+            let p0 = pts[i0], p1 = pts[i1], p2 = pts[i2], p3 = pts[i3]
+
+            let span = p2.x - p1.x
+            let t: CGFloat = span > 0 ? (pixelX - p1.x) / span : 0
+
+            let t2 = t * t
+            let t3 = t2 * t
+            let gain = Float(0.5) * (
+                (2 * p1.y) +
+                (-p0.y + p2.y) * Float(t) +
+                (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * Float(t2) +
+                (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * Float(t3)
+            )
+
+            let clamped = min(max(gain, -maxGainDB), maxGainDB)
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            result.append(CGPoint(x: pixelX, y: y))
+        }
+        return result
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let b = bounds
         let inset: CGFloat = isBackdrop ? 0 : 4
         var plotRect = b.insetBy(dx: inset, dy: inset)
 
-        // In backdrop mode, align the gain axis to the slider track area
-        if isBackdrop, trackMaxY > trackMinY {
+        // In backdrop mode, align the gain axis to the slider track area.
+        // Computed here (not in layout()) because the slider lives in a sibling
+        // view tree whose layout may not be complete when our layout() runs.
+        if isBackdrop, let slider = referenceSlider, let cell = slider.cell as? NSSliderCell {
+            // Use current knob rect to get actual knob height, then derive
+            // the travel endpoints mathematically (no slider value mutation)
+            let knobH = cell.knobRect(flipped: slider.isFlipped).height
+            // In slider's own coords (not flipped, Y=0 at bottom):
+            // knob center at minValue = knobH/2, at maxValue = height - knobH/2
+            let minCenterInSlider = CGPoint(x: 0, y: knobH / 2.0)
+            let maxCenterInSlider = CGPoint(x: 0, y: slider.bounds.height - knobH / 2.0)
+            let bottomY = convert(slider.convert(minCenterInSlider, to: nil), from: nil).y
+            let topY = convert(slider.convert(maxCenterInSlider, to: nil), from: nil).y
+
             plotRect = CGRect(
                 x: plotRect.minX,
-                y: trackMinY,
+                y: min(bottomY, topY),
                 width: plotRect.width,
-                height: trackMaxY - trackMinY
+                height: abs(topY - bottomY)
             )
         }
 
@@ -204,17 +262,22 @@ final class FrequencyResponseView: NSView {
             }
         }
 
-        // Composite curve
-        let sampleCount = 200
-        var curvePoints: [CGPoint] = []
-        for i in 0...sampleCount {
-            let t = Float(i) / Float(sampleCount)
-            let freq = 20.0 * pow(1000.0, t) // 20 to 20000
-            let gain = compositeGain(at: freq)
-            let clamped = min(max(gain, -maxGainDB), maxGainDB)
-            let x = CGFloat(t) * plotRect.width + plotRect.minX
-            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
-            curvePoints.append(CGPoint(x: x, y: y))
+        // Composite curve — backdrop uses spline through column positions, standalone uses true response
+        var curvePoints: [CGPoint]
+        if isBackdrop {
+            curvePoints = splinePoints(plotRect: plotRect)
+        } else {
+            let sampleCount = 200
+            curvePoints = []
+            for i in 0...sampleCount {
+                let t = Float(i) / Float(sampleCount)
+                let freq = 20.0 * pow(1000.0, t) // 20 to 20000
+                let gain = compositeGain(at: freq)
+                let clamped = min(max(gain, -maxGainDB), maxGainDB)
+                let x = CGFloat(t) * plotRect.width + plotRect.minX
+                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+                curvePoints.append(CGPoint(x: x, y: y))
+            }
         }
 
         let fillAlpha: CGFloat = isBackdrop ? 0.08 : 0.15
@@ -1009,6 +1072,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
 
         curveView.referenceSlider = sliders.first
+        curveView.allSliders = sliders
         updateCurveView()
     }
 
