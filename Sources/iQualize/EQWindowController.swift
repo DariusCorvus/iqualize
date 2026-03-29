@@ -26,6 +26,166 @@ final class ClickThroughView: NSView {
     }
 }
 
+// MARK: - Frequency response curve
+
+@available(macOS 14.2, *)
+@MainActor
+final class FrequencyResponseView: NSView {
+    private var bands: [EQBand] = []
+    private var maxGainDB: Float = 12
+
+    func updateBands(_ bands: [EQBand], maxGainDB: Float) {
+        self.bands = bands
+        self.maxGainDB = maxGainDB
+        needsDisplay = true
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 120)
+    }
+
+    private func freqToX(_ freq: Float, width: CGFloat) -> CGFloat {
+        let norm = log10(Double(freq) / 20.0) / 3.0 // log10(20000/20) = 3
+        return CGFloat(norm) * width
+    }
+
+    private func gainToY(_ gain: Float, height: CGFloat) -> CGFloat {
+        let norm = Double(gain) / Double(maxGainDB)
+        return height / 2.0 + CGFloat(norm) * (height / 2.0)
+    }
+
+    private func compositeGain(at freq: Float) -> Float {
+        var total: Float = 0
+        for band in bands {
+            let octaves = log2(freq / band.frequency)
+            let sigma = band.bandwidth / 2.0
+            let exponent = -0.5 * (octaves / sigma) * (octaves / sigma)
+            total += band.gain * exp(exponent)
+        }
+        return total
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let b = bounds
+        let inset: CGFloat = 4
+        let plotRect = b.insetBy(dx: inset, dy: inset)
+
+        // Background
+        let bgPath = NSBezierPath(roundedRect: b, xRadius: 6, yRadius: 6)
+        NSColor.controlBackgroundColor.setFill()
+        bgPath.fill()
+        NSColor.separatorColor.setStroke()
+        bgPath.lineWidth = 0.5
+        bgPath.stroke()
+
+        ctx.saveGState()
+        ctx.clip(to: plotRect)
+
+        // Grid: 0 dB center line
+        let zeroY = plotRect.minY + plotRect.height / 2.0
+        ctx.setStrokeColor(NSColor.separatorColor.cgColor)
+        ctx.setLineWidth(0.5)
+        ctx.move(to: CGPoint(x: plotRect.minX, y: zeroY))
+        ctx.addLine(to: CGPoint(x: plotRect.maxX, y: zeroY))
+        ctx.strokePath()
+
+        // Dashed dB grid lines
+        let dashPattern: [CGFloat] = [4, 4]
+        ctx.setLineDash(phase: 0, lengths: dashPattern)
+        ctx.setStrokeColor(NSColor.separatorColor.withAlphaComponent(0.3).cgColor)
+        let dbStep: Float = maxGainDB <= 12 ? 6 : 12
+        var dbLine = dbStep
+        while dbLine < maxGainDB {
+            for sign: Float in [-1, 1] {
+                let y = gainToY(sign * dbLine, height: plotRect.height) + plotRect.minY
+                ctx.move(to: CGPoint(x: plotRect.minX, y: y))
+                ctx.addLine(to: CGPoint(x: plotRect.maxX, y: y))
+            }
+            dbLine += dbStep
+        }
+        ctx.strokePath()
+
+        // Vertical freq markers
+        let freqMarkers: [Float] = [100, 1000, 10000]
+        for freq in freqMarkers {
+            let x = freqToX(freq, width: plotRect.width) + plotRect.minX
+            ctx.move(to: CGPoint(x: x, y: plotRect.minY))
+            ctx.addLine(to: CGPoint(x: x, y: plotRect.maxY))
+        }
+        ctx.strokePath()
+        ctx.setLineDash(phase: 0, lengths: [])
+
+        // Freq labels
+        let labelAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 8),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ]
+        for freq in freqMarkers {
+            let x = freqToX(freq, width: plotRect.width) + plotRect.minX
+            let label = freq >= 1000 ? "\(Int(freq / 1000))k" : "\(Int(freq))"
+            let str = NSAttributedString(string: label, attributes: labelAttrs)
+            str.draw(at: CGPoint(x: x + 2, y: plotRect.minY + 1))
+        }
+
+        // Composite curve
+        let sampleCount = 200
+        var curvePoints: [CGPoint] = []
+        for i in 0...sampleCount {
+            let t = Float(i) / Float(sampleCount)
+            let freq = 20.0 * pow(1000.0, t) // 20 to 20000
+            let gain = compositeGain(at: freq)
+            let clamped = min(max(gain, -maxGainDB), maxGainDB)
+            let x = CGFloat(t) * plotRect.width + plotRect.minX
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            curvePoints.append(CGPoint(x: x, y: y))
+        }
+
+        // Filled area from curve to 0dB line
+        if !curvePoints.isEmpty {
+            let fillPath = CGMutablePath()
+            fillPath.move(to: CGPoint(x: curvePoints[0].x, y: zeroY))
+            for pt in curvePoints { fillPath.addLine(to: pt) }
+            fillPath.addLine(to: CGPoint(x: curvePoints.last!.x, y: zeroY))
+            fillPath.closeSubpath()
+
+            ctx.saveGState()
+            ctx.addPath(fillPath)
+            ctx.clip()
+            let fillColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+            ctx.setFillColor(fillColor)
+            ctx.fill(plotRect)
+            ctx.restoreGState()
+
+            // Stroke curve
+            let curvePath = CGMutablePath()
+            curvePath.move(to: curvePoints[0])
+            for pt in curvePoints.dropFirst() { curvePath.addLine(to: pt) }
+            ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(0.8).cgColor)
+            ctx.setLineWidth(1.5)
+            ctx.addPath(curvePath)
+            ctx.strokePath()
+        }
+
+        // Band markers
+        let markerRadius: CGFloat = 4
+        for band in bands {
+            let x = freqToX(band.frequency, width: plotRect.width) + plotRect.minX
+            let clamped = min(max(band.gain, -maxGainDB), maxGainDB)
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            let markerRect = CGRect(x: x - markerRadius, y: y - markerRadius,
+                                     width: markerRadius * 2, height: markerRadius * 2)
+            ctx.setFillColor(NSColor.controlAccentColor.cgColor)
+            ctx.fillEllipse(in: markerRect)
+            ctx.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
+            ctx.setLineWidth(1)
+            ctx.strokeEllipse(in: markerRect)
+        }
+
+        ctx.restoreGState()
+    }
+}
+
 // MARK: - Drag handle view
 
 @available(macOS 14.2, *)
@@ -136,6 +296,12 @@ final class BandDropTarget: NSStackView {
     var onReorder: ((_ from: Int, _ to: Int) -> Void)?
     private var dropIndex: Int?
     private let indicator = NSView()
+    private var isDragging = false
+
+    // Hover-reveal add-band buttons
+    private var leftHoverButton: NSButton?
+    private var rightHoverButton: NSButton?
+    private var hoverTrackingArea: NSTrackingArea?
 
     func setupDropTarget() {
         registerForDraggedTypes([bandDragType, .string])
@@ -145,14 +311,100 @@ final class BandDropTarget: NSStackView {
         addSubview(indicator)
     }
 
+    func configureHoverButtons(target: AnyObject, leftAction: Selector, rightAction: Selector, canAdd: Bool, sliderCenterY: NSLayoutYAxisAnchor? = nil) {
+        leftHoverButton?.removeFromSuperview()
+        rightHoverButton?.removeFromSuperview()
+        leftHoverButton = nil
+        rightHoverButton = nil
+        if let old = hoverTrackingArea { removeTrackingArea(old); hoverTrackingArea = nil }
+
+        guard canAdd else { return }
+
+        let makeButton: (Selector) -> NSButton = { action in
+            let btn = NSButton(title: "", target: target, action: action)
+            btn.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "Add band")
+            btn.imageScaling = .scaleProportionallyUpOrDown
+            btn.isBordered = false
+            btn.bezelStyle = .regularSquare
+            btn.contentTintColor = .controlAccentColor
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.alphaValue = 0
+            btn.wantsLayer = true
+            NSLayoutConstraint.activate([
+                btn.widthAnchor.constraint(equalToConstant: 20),
+                btn.heightAnchor.constraint(equalToConstant: 20),
+            ])
+            return btn
+        }
+
+        let left = makeButton(leftAction)
+        let right = makeButton(rightAction)
+        addSubview(left)
+        addSubview(right)
+
+        let yAnchor = sliderCenterY ?? centerYAnchor
+        NSLayoutConstraint.activate([
+            left.centerYAnchor.constraint(equalTo: yAnchor),
+            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -6),
+            right.centerYAnchor.constraint(equalTo: yAnchor),
+            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 6),
+        ])
+
+        leftHoverButton = left
+        rightHoverButton = right
+
+        // Set up tracking area
+        if let old = hoverTrackingArea { removeTrackingArea(old) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let old = hoverTrackingArea { removeTrackingArea(old) }
+        if leftHoverButton != nil || rightHoverButton != nil {
+            let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+            addTrackingArea(area)
+            hoverTrackingArea = area
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard !isDragging else { return }
+        let loc = convert(event.locationInWindow, from: nil)
+        let edgeThreshold: CGFloat = 30
+
+        let showLeft = loc.x < edgeThreshold
+        let showRight = loc.x > bounds.width - edgeThreshold
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            leftHoverButton?.animator().alphaValue = showLeft ? 1 : 0
+            rightHoverButton?.animator().alphaValue = showRight ? 1 : 0
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            leftHoverButton?.animator().alphaValue = 0
+            rightHoverButton?.animator().alphaValue = 0
+        }
+    }
+
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        isDragging = true
+        leftHoverButton?.alphaValue = 0
+        rightHoverButton?.alphaValue = 0
         indicator.isHidden = false
         return .move
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let loc = convert(sender.draggingLocation, from: nil)
-        // Find insertion index among band columns (skip + buttons)
         let columns = arrangedSubviews.filter { $0 is DraggableBandColumn }
         var insertionIndex = columns.count
         for (i, col) in columns.enumerated() {
@@ -180,11 +432,13 @@ final class BandDropTarget: NSStackView {
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        isDragging = false
         indicator.isHidden = true
         dropIndex = nil
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        isDragging = false
         indicator.isHidden = true
         guard let dropIdx = dropIndex,
               let str = sender.draggingPasteboard.string(forType: .string),
@@ -201,8 +455,19 @@ final class BandDropTarget: NSStackView {
     }
 
     override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        isDragging = false
         indicator.isHidden = true
         dropIndex = nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Allow clicks on hover buttons positioned outside our bounds
+        for btn in [leftHoverButton, rightHoverButton] {
+            guard let btn, btn.alphaValue > 0 else { continue }
+            let btnPoint = btn.convert(point, from: superview)
+            if btn.bounds.contains(btnPoint) { return btn }
+        }
+        return super.hitTest(point)
     }
 }
 
@@ -232,6 +497,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var resetButton: NSButton!
     private var deleteButton: NSButton!
     private var importExportButton: NSButton!
+    private var curveView: FrequencyResponseView!
+    private var curveToggle: NSButton!
 
     /// Snapshot of the preset when it was loaded/saved, for reset.
     private var savedPresetSnapshot: EQPresetData?
@@ -404,9 +671,46 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             self?.reorderBand(from: from, to: to)
         }
 
-        mainStack.addArrangedSubview(slidersContainer)
-        slidersContainer.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
-        slidersContainer.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
+        // Wrap sliders + curve in a vertical container so they share width
+        let bandsAndCurve = NSStackView()
+        bandsAndCurve.orientation = .vertical
+        bandsAndCurve.alignment = .centerX
+        bandsAndCurve.spacing = 8
+        bandsAndCurve.translatesAutoresizingMaskIntoConstraints = false
+
+        bandsAndCurve.addArrangedSubview(slidersContainer)
+
+        // Curve toggle — small disclosure triangle style
+        curveToggle = NSButton(title: "", target: self, action: #selector(toggleCurve(_:)))
+        curveToggle.bezelStyle = .disclosure
+        curveToggle.setButtonType(.pushOnPushOff)
+        curveToggle.title = ""
+        curveToggle.state = .off
+        curveToggle.translatesAutoresizingMaskIntoConstraints = false
+
+        let toggleLabel = NSTextField(labelWithString: "Response Curve")
+        toggleLabel.font = .systemFont(ofSize: 10)
+        toggleLabel.textColor = .secondaryLabelColor
+
+        let toggleRow = NSStackView(views: [curveToggle, toggleLabel])
+        toggleRow.orientation = .horizontal
+        toggleRow.spacing = 2
+        toggleRow.alignment = .centerY
+        bandsAndCurve.addArrangedSubview(toggleRow)
+
+        curveView = FrequencyResponseView()
+        curveView.translatesAutoresizingMaskIntoConstraints = false
+        curveView.isHidden = true
+        curveView.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        bandsAndCurve.addArrangedSubview(curveView)
+
+        mainStack.addArrangedSubview(bandsAndCurve)
+        bandsAndCurve.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        bandsAndCurve.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
+
+        // Curve matches full window width like the dividers
+        curveView.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        curveView.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Divider below bands
         let bottomDivider = NSBox()
@@ -483,22 +787,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         let bands = audioEngine.activePreset.bands
         let canAdd = bands.count < EQPresetData.maxBandCount
-        var firstSlider: NSSlider?
-
-        // Left "+" placeholder
-        var leftAddButton: NSView?
-        if canAdd {
-            let add = makeAddButton(side: .left)
-            leftAddButton = add
-            slidersContainer.addArrangedSubview(add)
-
-            let leftDivider = NSView()
-            leftDivider.wantsLayer = true
-            leftDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
-            leftDivider.translatesAutoresizingMaskIntoConstraints = false
-            leftDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-            slidersContainer.addArrangedSubview(leftDivider)
-        }
 
         for (i, band) in bands.enumerated() {
             let column = DraggableBandColumn()
@@ -531,7 +819,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slider.tag = i
             slider.translatesAutoresizingMaskIntoConstraints = false
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
-            if firstSlider == nil { firstSlider = slider }
+
             sliders.append(slider)
 
             let freqLabel = UnitTextField(string: band.frequencyLabel)
@@ -590,6 +878,20 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             // Right-click context menu
             let menu = NSMenu()
 
+            if canAdd {
+                let addLeft = NSMenuItem(title: "Add Band to Left", action: #selector(addBandAtIndex(_:)), keyEquivalent: "")
+                addLeft.target = self
+                addLeft.tag = i
+                menu.addItem(addLeft)
+
+                let addRight = NSMenuItem(title: "Add Band to Right", action: #selector(addBandAtIndex(_:)), keyEquivalent: "")
+                addRight.target = self
+                addRight.tag = -(i + 1) // negative tag encodes "insert after index i"
+                menu.addItem(addRight)
+
+                menu.addItem(.separator())
+            }
+
             if i > 0 {
                 let moveLeft = NSMenuItem(title: "Move Left", action: #selector(moveBandLeft(_:)), keyEquivalent: "")
                 moveLeft.target = self
@@ -623,32 +925,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
         }
 
-        // Right "+" placeholder
-        var rightAddButton: NSView?
-        if canAdd {
-            let rightDivider = NSView()
-            rightDivider.wantsLayer = true
-            rightDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
-            rightDivider.translatesAutoresizingMaskIntoConstraints = false
-            rightDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-            slidersContainer.addArrangedSubview(rightDivider)
+        // Configure hover-reveal add-band buttons
+        slidersContainer.configureHoverButtons(
+            target: self,
+            leftAction: #selector(addBandLeft(_:)),
+            rightAction: #selector(addBandRight(_:)),
+            canAdd: canAdd,
+            sliderCenterY: sliders.first?.centerYAnchor
+        )
 
-            let add = makeAddButton(side: .right)
-            rightAddButton = add
-            slidersContainer.addArrangedSubview(add)
-        }
-
-        // Align + buttons to the first slider's vertical center
-        if let slider = firstSlider {
-            if let btn = leftAddButton?.subviews.first {
-                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
-            }
-            if let btn = rightAddButton?.subviews.first {
-                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
-            }
-        }
-
-        let bandsWidth = CGFloat(bands.count * 40 + 32)
+        let bandsWidth = CGFloat(bands.count * 40)
         if let window = self.window {
             var frame = window.frame
             let newWidth = max(bandsWidth, window.minSize.width)
@@ -656,6 +942,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             window.setFrame(frame, display: true, animate: true)
         }
 
+        updateCurveView()
     }
 
     // MARK: - Sync UI ↔ Engine
@@ -672,6 +959,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
         lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
         updateWindowTitle()
+        updateCurveView()
+    }
+
+    private func updateCurveView() {
+        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: audioEngine.maxGainDB)
     }
 
     private func populatePresetPicker() {
@@ -804,6 +1096,20 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     // MARK: - Actions
 
+    @objc private func toggleCurve(_ sender: NSButton) {
+        let expanding = curveView.isHidden
+        curveView.isHidden = !expanding
+
+        if let window = self.window {
+            let delta: CGFloat = expanding ? 128 : -128
+            var frame = window.frame
+            frame.size.height += delta
+            frame.origin.y -= delta
+            window.setFrame(frame, display: true, animate: true)
+        }
+    }
+
+
     @objc private func toggleBypass(_ sender: NSButton) {
         audioEngine.bypassed = sender.state == .on
         var state = iQualizeState.load()
@@ -834,26 +1140,30 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         buildSliders()
     }
 
-    private enum AddSide { case left, right }
+    @objc private func addBandAtIndex(_ sender: NSMenuItem) {
+        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        let oldPreset = audioEngine.activePreset
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
 
-    private func makeAddButton(side: AddSide) -> NSView {
-        let wrapper = NSView()
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        let insertionIndex: Int
+        if sender.tag >= 0 {
+            // "Add Band to Left" — insert at this index
+            insertionIndex = sender.tag
+        } else {
+            // "Add Band to Right" — negative tag encodes -(originalIndex + 1), insert after
+            insertionIndex = (-sender.tag - 1) + 1
+        }
 
-        let button = NSButton(title: "+", target: self,
-                              action: side == .left ? #selector(addBandLeft(_:)) : #selector(addBandRight(_:)))
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 16, weight: .light)
-        button.isBordered = false
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
-            wrapper.widthAnchor.constraint(equalToConstant: 24),
-        ])
-
-        return wrapper
+        let clampedIndex = min(insertionIndex, preset.bands.count)
+        // Use the band the user clicked as the reference (for "right", look back one index)
+        let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
+        let reference = refIndex < preset.bands.count ? preset.bands[refIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
+        preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth), at: clampedIndex)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+        registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     private func reorderBand(from: Int, to: Int) {
@@ -922,7 +1232,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         registerUndo("Delete Band", oldPreset: oldPreset)
     }
 
-    @objc private func addBandLeft(_ sender: NSButton) {
+    @objc private func addBandLeft(_ sender: Any) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
@@ -935,7 +1245,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         registerUndo("Add Band", oldPreset: oldPreset)
     }
 
-    @objc private func addBandRight(_ sender: NSButton) {
+    @objc private func addBandRight(_ sender: Any) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
@@ -1009,6 +1319,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
             field.stringValue = audioEngine.activePreset.bands[index].bandwidthLabel
         }
+        updateCurveView()
     }
 
     @objc private func presetChanged(_ sender: NSPopUpButton) {
@@ -1042,6 +1353,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.activePreset = preset
 
         gainLabels[index].stringValue = preset.bands[index].gainLabel
+        updateCurveView()
         markModified()
 
         // Register undo when drag ends (mouse up)
