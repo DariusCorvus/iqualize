@@ -16,6 +16,17 @@ Version lives in `Sources/iQualize/Info.plist` (`CFBundleShortVersionString` and
 - Multiple bug fixes in one PR = one patch bump
 - Multiple features in one PR = one minor bump
 - Always update both `CFBundleShortVersionString` (e.g. `0.4.0`) and `CFBundleVersion` (e.g. `0.4`)
+- You MUST check and bump the version on every PR — do not wait for the user to remind you
+
+## Task Tracking
+
+Use GitHub Issues for backlog and todos. At the start of each session, check `gh issue list` for open work.
+
+- **bug**: something broken
+- **feature**: new functionality
+- **polish**: UI/UX improvements
+
+When closing a task via PR, use "Fixes #N" in the PR body to auto-close the issue.
 
 ## Task Tracking
 
