@@ -296,6 +296,12 @@ final class BandDropTarget: NSStackView {
     var onReorder: ((_ from: Int, _ to: Int) -> Void)?
     private var dropIndex: Int?
     private let indicator = NSView()
+    private var isDragging = false
+
+    // Hover-reveal add-band buttons
+    private var leftHoverButton: NSButton?
+    private var rightHoverButton: NSButton?
+    private var hoverTrackingArea: NSTrackingArea?
 
     func setupDropTarget() {
         registerForDraggedTypes([bandDragType, .string])
@@ -305,14 +311,100 @@ final class BandDropTarget: NSStackView {
         addSubview(indicator)
     }
 
+    func configureHoverButtons(target: AnyObject, leftAction: Selector, rightAction: Selector, canAdd: Bool, sliderCenterY: NSLayoutYAxisAnchor? = nil) {
+        leftHoverButton?.removeFromSuperview()
+        rightHoverButton?.removeFromSuperview()
+        leftHoverButton = nil
+        rightHoverButton = nil
+        if let old = hoverTrackingArea { removeTrackingArea(old); hoverTrackingArea = nil }
+
+        guard canAdd else { return }
+
+        let makeButton: (Selector) -> NSButton = { action in
+            let btn = NSButton(title: "", target: target, action: action)
+            btn.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "Add band")
+            btn.imageScaling = .scaleProportionallyUpOrDown
+            btn.isBordered = false
+            btn.bezelStyle = .regularSquare
+            btn.contentTintColor = .controlAccentColor
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.alphaValue = 0
+            btn.wantsLayer = true
+            NSLayoutConstraint.activate([
+                btn.widthAnchor.constraint(equalToConstant: 20),
+                btn.heightAnchor.constraint(equalToConstant: 20),
+            ])
+            return btn
+        }
+
+        let left = makeButton(leftAction)
+        let right = makeButton(rightAction)
+        addSubview(left)
+        addSubview(right)
+
+        let yAnchor = sliderCenterY ?? centerYAnchor
+        NSLayoutConstraint.activate([
+            left.centerYAnchor.constraint(equalTo: yAnchor),
+            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -6),
+            right.centerYAnchor.constraint(equalTo: yAnchor),
+            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 6),
+        ])
+
+        leftHoverButton = left
+        rightHoverButton = right
+
+        // Set up tracking area
+        if let old = hoverTrackingArea { removeTrackingArea(old) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let old = hoverTrackingArea { removeTrackingArea(old) }
+        if leftHoverButton != nil || rightHoverButton != nil {
+            let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+            addTrackingArea(area)
+            hoverTrackingArea = area
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard !isDragging else { return }
+        let loc = convert(event.locationInWindow, from: nil)
+        let edgeThreshold: CGFloat = 30
+
+        let showLeft = loc.x < edgeThreshold
+        let showRight = loc.x > bounds.width - edgeThreshold
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            leftHoverButton?.animator().alphaValue = showLeft ? 1 : 0
+            rightHoverButton?.animator().alphaValue = showRight ? 1 : 0
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            leftHoverButton?.animator().alphaValue = 0
+            rightHoverButton?.animator().alphaValue = 0
+        }
+    }
+
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        isDragging = true
+        leftHoverButton?.alphaValue = 0
+        rightHoverButton?.alphaValue = 0
         indicator.isHidden = false
         return .move
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         let loc = convert(sender.draggingLocation, from: nil)
-        // Find insertion index among band columns (skip + buttons)
         let columns = arrangedSubviews.filter { $0 is DraggableBandColumn }
         var insertionIndex = columns.count
         for (i, col) in columns.enumerated() {
@@ -340,11 +432,13 @@ final class BandDropTarget: NSStackView {
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        isDragging = false
         indicator.isHidden = true
         dropIndex = nil
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        isDragging = false
         indicator.isHidden = true
         guard let dropIdx = dropIndex,
               let str = sender.draggingPasteboard.string(forType: .string),
@@ -361,8 +455,19 @@ final class BandDropTarget: NSStackView {
     }
 
     override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        isDragging = false
         indicator.isHidden = true
         dropIndex = nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Allow clicks on hover buttons positioned outside our bounds
+        for btn in [leftHoverButton, rightHoverButton] {
+            guard let btn, btn.alphaValue > 0 else { continue }
+            let btnPoint = btn.convert(point, from: superview)
+            if btn.bounds.contains(btnPoint) { return btn }
+        }
+        return super.hitTest(point)
     }
 }
 
@@ -680,22 +785,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         let bands = audioEngine.activePreset.bands
         let canAdd = bands.count < EQPresetData.maxBandCount
-        var firstSlider: NSSlider?
-
-        // Left "+" placeholder
-        var leftAddButton: NSView?
-        if canAdd {
-            let add = makeAddButton(side: .left)
-            leftAddButton = add
-            slidersContainer.addArrangedSubview(add)
-
-            let leftDivider = NSView()
-            leftDivider.wantsLayer = true
-            leftDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
-            leftDivider.translatesAutoresizingMaskIntoConstraints = false
-            leftDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-            slidersContainer.addArrangedSubview(leftDivider)
-        }
 
         for (i, band) in bands.enumerated() {
             let column = DraggableBandColumn()
@@ -728,7 +817,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slider.tag = i
             slider.translatesAutoresizingMaskIntoConstraints = false
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
-            if firstSlider == nil { firstSlider = slider }
+
             sliders.append(slider)
 
             let freqLabel = UnitTextField(string: band.frequencyLabel)
@@ -771,6 +860,20 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             // Right-click context menu
             let menu = NSMenu()
 
+            if canAdd {
+                let addLeft = NSMenuItem(title: "Add Band to Left", action: #selector(addBandAtIndex(_:)), keyEquivalent: "")
+                addLeft.target = self
+                addLeft.tag = i
+                menu.addItem(addLeft)
+
+                let addRight = NSMenuItem(title: "Add Band to Right", action: #selector(addBandAtIndex(_:)), keyEquivalent: "")
+                addRight.target = self
+                addRight.tag = -(i + 1) // negative tag encodes "insert after index i"
+                menu.addItem(addRight)
+
+                menu.addItem(.separator())
+            }
+
             if i > 0 {
                 let moveLeft = NSMenuItem(title: "Move Left", action: #selector(moveBandLeft(_:)), keyEquivalent: "")
                 moveLeft.target = self
@@ -804,32 +907,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
         }
 
-        // Right "+" placeholder
-        var rightAddButton: NSView?
-        if canAdd {
-            let rightDivider = NSView()
-            rightDivider.wantsLayer = true
-            rightDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
-            rightDivider.translatesAutoresizingMaskIntoConstraints = false
-            rightDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-            slidersContainer.addArrangedSubview(rightDivider)
+        // Configure hover-reveal add-band buttons
+        slidersContainer.configureHoverButtons(
+            target: self,
+            leftAction: #selector(addBandLeft(_:)),
+            rightAction: #selector(addBandRight(_:)),
+            canAdd: canAdd,
+            sliderCenterY: sliders.first?.centerYAnchor
+        )
 
-            let add = makeAddButton(side: .right)
-            rightAddButton = add
-            slidersContainer.addArrangedSubview(add)
-        }
-
-        // Align + buttons to the first slider's vertical center
-        if let slider = firstSlider {
-            if let btn = leftAddButton?.subviews.first {
-                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
-            }
-            if let btn = rightAddButton?.subviews.first {
-                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
-            }
-        }
-
-        let bandsWidth = CGFloat(bands.count * 40 + 32)
+        let bandsWidth = CGFloat(bands.count * 40)
         if let window = self.window {
             var frame = window.frame
             let newWidth = max(bandsWidth, window.minSize.width)
@@ -1034,26 +1121,30 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         buildSliders()
     }
 
-    private enum AddSide { case left, right }
+    @objc private func addBandAtIndex(_ sender: NSMenuItem) {
+        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        let oldPreset = audioEngine.activePreset
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
 
-    private func makeAddButton(side: AddSide) -> NSView {
-        let wrapper = NSView()
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        let insertionIndex: Int
+        if sender.tag >= 0 {
+            // "Add Band to Left" — insert at this index
+            insertionIndex = sender.tag
+        } else {
+            // "Add Band to Right" — negative tag encodes -(originalIndex + 1), insert after
+            insertionIndex = (-sender.tag - 1) + 1
+        }
 
-        let button = NSButton(title: "+", target: self,
-                              action: side == .left ? #selector(addBandLeft(_:)) : #selector(addBandRight(_:)))
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 16, weight: .light)
-        button.isBordered = false
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
-            wrapper.widthAnchor.constraint(equalToConstant: 24),
-        ])
-
-        return wrapper
+        let clampedIndex = min(insertionIndex, preset.bands.count)
+        // Use the band the user clicked as the reference (for "right", look back one index)
+        let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
+        let reference = refIndex < preset.bands.count ? preset.bands[refIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
+        preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth), at: clampedIndex)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+        registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     private func reorderBand(from: Int, to: Int) {
@@ -1122,7 +1213,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         registerUndo("Delete Band", oldPreset: oldPreset)
     }
 
-    @objc private func addBandLeft(_ sender: NSButton) {
+    @objc private func addBandLeft(_ sender: Any) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
@@ -1135,7 +1226,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         registerUndo("Add Band", oldPreset: oldPreset)
     }
 
-    @objc private func addBandRight(_ sender: NSButton) {
+    @objc private func addBandRight(_ sender: Any) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
