@@ -416,7 +416,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField else { return }
+        guard let field = notification.object as? UnitTextField else { return }
         let index = field.tag
         guard index < audioEngine.activePreset.bands.count else { return }
 
