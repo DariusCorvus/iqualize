@@ -1109,7 +1109,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
     }
 
-
     @objc private func toggleBypass(_ sender: NSButton) {
         audioEngine.bypassed = sender.state == .on
         var state = iQualizeState.load()
