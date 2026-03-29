@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.perth.TapsSpike</string>
+    <key>CFBundleName</key>
+    <string>TapsSpike</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Perth needs to capture system audio to apply equalizer effects.</string>
+</dict>
+</plist>
