@@ -1137,7 +1137,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
 
         let clampedIndex = min(insertionIndex, preset.bands.count)
-        let reference = clampedIndex < preset.bands.count ? preset.bands[clampedIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
+        // Use the band the user clicked as the reference (for "right", look back one index)
+        let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
+        let reference = refIndex < preset.bands.count ? preset.bands[refIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
         preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth), at: clampedIndex)
         audioEngine.activePreset = preset
         buildSliders()
