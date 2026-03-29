@@ -311,7 +311,7 @@ final class BandDropTarget: NSStackView {
         addSubview(indicator)
     }
 
-    func configureHoverButtons(target: AnyObject, leftAction: Selector, rightAction: Selector, canAdd: Bool) {
+    func configureHoverButtons(target: AnyObject, leftAction: Selector, rightAction: Selector, canAdd: Bool, sliderCenterY: NSLayoutYAxisAnchor? = nil) {
         leftHoverButton?.removeFromSuperview()
         rightHoverButton?.removeFromSuperview()
         leftHoverButton = nil
@@ -341,11 +341,12 @@ final class BandDropTarget: NSStackView {
         addSubview(left)
         addSubview(right)
 
+        let yAnchor = sliderCenterY ?? centerYAnchor
         NSLayoutConstraint.activate([
-            left.centerYAnchor.constraint(equalTo: centerYAnchor),
-            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            right.centerYAnchor.constraint(equalTo: centerYAnchor),
-            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            left.centerYAnchor.constraint(equalTo: yAnchor),
+            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -6),
+            right.centerYAnchor.constraint(equalTo: yAnchor),
+            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 6),
         ])
 
         leftHoverButton = left
@@ -899,7 +900,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             target: self,
             leftAction: #selector(addBandLeft(_:)),
             rightAction: #selector(addBandRight(_:)),
-            canAdd: canAdd
+            canAdd: canAdd,
+            sliderCenterY: sliders.first?.centerYAnchor
         )
 
         let bandsWidth = CGFloat(bands.count * 40)
