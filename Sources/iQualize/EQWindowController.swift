@@ -598,13 +598,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView.heightAnchor.constraint(equalToConstant: 120).isActive = true
         bandsAndCurve.addArrangedSubview(curveView)
 
-        // Curve matches full window width like the dividers
-        curveView.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
-        curveView.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
-
         mainStack.addArrangedSubview(bandsAndCurve)
         bandsAndCurve.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
         bandsAndCurve.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
+
+        // Curve matches full window width like the dividers
+        curveView.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        curveView.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Divider below bands
         let bottomDivider = NSBox()
