@@ -354,8 +354,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         slidersContainer = BandDropTarget()
         slidersContainer.orientation = .horizontal
         slidersContainer.alignment = .bottom
-        slidersContainer.distribution = .fillEqually
-        slidersContainer.spacing = 2
+        slidersContainer.distribution = .fill
+        slidersContainer.spacing = 8
         slidersContainer.translatesAutoresizingMaskIntoConstraints = false
         slidersContainer.setupDropTarget()
         slidersContainer.onReorder = { [weak self] from, to in
@@ -448,6 +448,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             let add = makeAddButton(side: .left)
             leftAddButton = add
             slidersContainer.addArrangedSubview(add)
+
+            let leftDivider = NSView()
+            leftDivider.wantsLayer = true
+            leftDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+            leftDivider.translatesAutoresizingMaskIntoConstraints = false
+            leftDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+            slidersContainer.addArrangedSubview(leftDivider)
         }
 
         for (i, band) in bands.enumerated() {
@@ -550,11 +557,23 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             column.menu = menu
 
             slidersContainer.addArrangedSubview(column)
+
+            // Make all band columns equal width
+            if let firstColumn = slidersContainer.arrangedSubviews.first(where: { $0 is DraggableBandColumn }) as? DraggableBandColumn, firstColumn !== column {
+                column.widthAnchor.constraint(equalTo: firstColumn.widthAnchor).isActive = true
+            }
         }
 
         // Right "+" placeholder
         var rightAddButton: NSView?
         if canAdd {
+            let rightDivider = NSView()
+            rightDivider.wantsLayer = true
+            rightDivider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+            rightDivider.translatesAutoresizingMaskIntoConstraints = false
+            rightDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+            slidersContainer.addArrangedSubview(rightDivider)
+
             let add = makeAddButton(side: .right)
             rightAddButton = add
             slidersContainer.addArrangedSubview(add)
