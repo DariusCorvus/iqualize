@@ -33,6 +33,7 @@ final class ClickThroughView: NSView {
 final class FrequencyResponseView: NSView {
     private var bands: [EQBand] = []
     private var maxGainDB: Float = 12
+    private var sampleRate: Double = 48000
 
     /// When true, draws with transparent background (for use as slider backdrop).
     var isBackdrop = false
@@ -43,9 +44,10 @@ final class FrequencyResponseView: NSView {
     /// All band sliders — used to compute column center X at draw time.
     var allSliders: [NSSlider] = []
 
-    func updateBands(_ bands: [EQBand], maxGainDB: Float) {
+    func updateBands(_ bands: [EQBand], maxGainDB: Float, sampleRate: Double) {
         self.bands = bands
         self.maxGainDB = maxGainDB
+        self.sampleRate = sampleRate
         needsDisplay = true
     }
 
@@ -110,6 +112,21 @@ final class FrequencyResponseView: NSView {
             total += bandGain(for: band, at: freq)
         }
         return total
+    }
+
+    /// Biquad composite response points at 512 log-spaced frequencies.
+    private func biquadPoints(plotRect: CGRect) -> [CGPoint] {
+        guard !bands.isEmpty else { return [] }
+        let frequencies = BiquadResponse.logFrequencies(count: 512)
+        let gains = BiquadResponse.compositeResponse(
+            bands: bands, sampleRate: sampleRate, frequencies: frequencies)
+        return zip(frequencies, gains).map { freq, gain in
+            let t = log10(freq / 20.0) / 3.0
+            let clamped = min(max(Float(gain), -maxGainDB), maxGainDB)
+            let x = CGFloat(t) * plotRect.width + plotRect.minX
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            return CGPoint(x: x, y: y)
+        }
     }
 
     /// Catmull-Rom spline through band control points in pixel-X space.
@@ -262,7 +279,35 @@ final class FrequencyResponseView: NSView {
             }
         }
 
-        // Composite curve — backdrop uses spline through column positions, standalone uses true response
+        // Layer 1: Biquad composite response (filled area behind)
+        let biquadPts = biquadPoints(plotRect: plotRect)
+        if !biquadPts.isEmpty {
+            let biquadFill = CGMutablePath()
+            biquadFill.move(to: CGPoint(x: biquadPts[0].x, y: zeroY))
+            for pt in biquadPts { biquadFill.addLine(to: pt) }
+            biquadFill.addLine(to: CGPoint(x: biquadPts.last!.x, y: zeroY))
+            biquadFill.closeSubpath()
+
+            ctx.saveGState()
+            ctx.addPath(biquadFill)
+            ctx.clip()
+            let biquadFillAlpha: CGFloat = isBackdrop ? 0.08 : 0.12
+            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(biquadFillAlpha).cgColor)
+            ctx.fill(plotRect)
+            ctx.restoreGState()
+
+            // Biquad stroke — slightly different shade to distinguish from spline
+            let biquadStroke = CGMutablePath()
+            biquadStroke.move(to: biquadPts[0])
+            for pt in biquadPts.dropFirst() { biquadStroke.addLine(to: pt) }
+            let biquadStrokeAlpha: CGFloat = isBackdrop ? 0.35 : 0.6
+            ctx.setStrokeColor(NSColor.controlAccentColor.blended(withFraction: 0.3, of: .systemTeal)!.withAlphaComponent(biquadStrokeAlpha).cgColor)
+            ctx.setLineWidth(isBackdrop ? 0.75 : 1.0)
+            ctx.addPath(biquadStroke)
+            ctx.strokePath()
+        }
+
+        // Layer 2: Spline / approximation curve (thin stroke on top)
         var curvePoints: [CGPoint]
         if isBackdrop {
             curvePoints = splinePoints(plotRect: plotRect)
@@ -280,28 +325,12 @@ final class FrequencyResponseView: NSView {
             }
         }
 
-        let fillAlpha: CGFloat = isBackdrop ? 0.08 : 0.15
-        let strokeAlpha: CGFloat = isBackdrop ? 0.4 : 0.8
-
-        // Filled area from curve to 0dB line
         if !curvePoints.isEmpty {
-            let fillPath = CGMutablePath()
-            fillPath.move(to: CGPoint(x: curvePoints[0].x, y: zeroY))
-            for pt in curvePoints { fillPath.addLine(to: pt) }
-            fillPath.addLine(to: CGPoint(x: curvePoints.last!.x, y: zeroY))
-            fillPath.closeSubpath()
-
-            ctx.saveGState()
-            ctx.addPath(fillPath)
-            ctx.clip()
-            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(fillAlpha).cgColor)
-            ctx.fill(plotRect)
-            ctx.restoreGState()
-
-            // Stroke curve
+            // Stroke-only — the biquad fill provides the filled area
             let curvePath = CGMutablePath()
             curvePath.move(to: curvePoints[0])
             for pt in curvePoints.dropFirst() { curvePath.addLine(to: pt) }
+            let strokeAlpha: CGFloat = isBackdrop ? 0.5 : 0.9
             ctx.setStrokeColor(NSColor.controlAccentColor.withAlphaComponent(strokeAlpha).cgColor)
             ctx.setLineWidth(isBackdrop ? 1.0 : 1.5)
             ctx.addPath(curvePath)
@@ -1094,7 +1123,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func updateCurveView() {
-        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: audioEngine.maxGainDB)
+        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: audioEngine.maxGainDB, sampleRate: audioEngine.outputSampleRate)
     }
 
     private func populatePresetPicker() {

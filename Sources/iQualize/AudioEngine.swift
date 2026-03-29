@@ -96,6 +96,7 @@ final class AudioEngine {
     }
 
     var maxGainDB: Float = 12
+    private(set) var outputSampleRate: Double = 48000
 
     init() {
         do {
@@ -191,6 +192,7 @@ final class AudioEngine {
         // The tap may capture at a different rate (e.g., 48kHz tap vs 44.1kHz Bluetooth).
         // The aggregate device handles resampling between the tap and the IOProc.
         let sampleRate = deviceSampleRate > 0 ? deviceSampleRate : tapSampleRate
+        self.outputSampleRate = sampleRate
 
         os_log(.default, log: appLog,
                "tapRate: %{public}.0f  deviceRate: %{public}.0f  using: %{public}.0f  channels: %{public}u  device: %{public}@",

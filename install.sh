@@ -26,8 +26,13 @@ else
     echo "Binary updated"
 fi
 
-# Always update Info.plist
-cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
+# Always update Info.plist — then re-sign if it changed (plist change invalidates signature)
+if ! cmp -s Sources/iQualize/Info.plist "$APP/Contents/Info.plist"; then
+    cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
+    codesign --force --sign "Apple Development" --entitlements iQualize.entitlements "$APP" 2>/dev/null && echo "Re-signed (Info.plist changed)"
+else
+    cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
+fi
 
 # Strip provenance xattr to prevent macOS security policy launch blocks
 xattr -rc "$APP" 2>/dev/null
