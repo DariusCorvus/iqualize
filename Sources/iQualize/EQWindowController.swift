@@ -212,7 +212,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private let audioEngine: AudioEngine
     private let presetStore: PresetStore
 
-    private var eqToggle: NSButton!
     private var undoButton: NSButton!
     private var redoButton: NSButton!
     private var presetPicker: NSPopUpButton!
@@ -221,6 +220,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var gainLabels: [UnitTextField] = []
     private var freqLabels: [UnitTextField] = []
     private var qLabels: [UnitTextField] = []
+    private var bypassCheckbox: NSButton!
     private var clippingCheckbox: NSButton!
     private var lowLatencyCheckbox: NSButton!
     private var maxGainPicker: NSPopUpButton!
@@ -267,7 +267,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.onStateChange = { [weak self] in
             previousCallback?()
             self?.updateOutputLabel()
-            self?.updateEQToggle()
         }
     }
 
@@ -416,8 +415,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
         // Row 3: Bottom bar — EQ Enabled (left) + Prevent Clipping (right)
-        eqToggle = NSButton(checkboxWithTitle: "EQ Enabled", target: self, action: #selector(toggleEQ(_:)))
-        eqToggle.state = audioEngine.isRunning ? .on : .off
+        bypassCheckbox = NSButton(checkboxWithTitle: "Bypass",
+                                    target: self, action: #selector(toggleBypass(_:)))
+        bypassCheckbox.state = audioEngine.bypassed ? .on : .off
 
         clippingCheckbox = NSButton(checkboxWithTitle: "Prevent Clipping",
                                      target: self, action: #selector(toggleClipping(_:)))
@@ -449,7 +449,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         maxGainPicker.target = self
         maxGainPicker.action = #selector(maxGainChanged(_:))
 
-        bottomRow.addArrangedSubview(eqToggle)
+        bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
@@ -650,7 +650,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         buildSliders()
         updateDeleteButton()
         updateOutputLabel()
-        updateEQToggle()
+        bypassCheckbox.state = audioEngine.bypassed ? .on : .off
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
         lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
         updateWindowTitle()
@@ -697,9 +697,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         outputLabel.stringValue = "Output: \(audioEngine.outputDeviceName)"
     }
 
-    private func updateEQToggle() {
-        eqToggle.state = audioEngine.isRunning ? .on : .off
-    }
 
 
     /// If the active preset is built-in, fork it into a custom copy before editing.
@@ -789,13 +786,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     // MARK: - Actions
 
-    @objc private func toggleEQ(_ sender: NSButton) {
-        let enable = sender.state == .on
-        audioEngine.setEnabled(enable)
+    @objc private func toggleBypass(_ sender: NSButton) {
+        audioEngine.bypassed = sender.state == .on
         var state = iQualizeState.load()
-        state.isEnabled = audioEngine.isRunning
+        state.bypassed = audioEngine.bypassed
         state.save()
-        updateEQToggle()
     }
 
     @objc private func toggleClipping(_ sender: NSButton) {

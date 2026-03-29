@@ -33,6 +33,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         audioEngine.preventClipping = state.preventClipping
         audioEngine.lowLatency = state.lowLatency
         audioEngine.maxGainDB = state.maxGainDB
+        audioEngine.bypassed = state.bypassed
         audioEngine.setEnabled(true)
         updateIcon()
 
@@ -83,6 +84,14 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+
+        // Bypass EQ toggle
+        let bypassItem = NSMenuItem(title: "Bypass EQ",
+                                      action: #selector(toggleBypass(_:)), keyEquivalent: "b")
+        bypassItem.keyEquivalentModifierMask = [.command]
+        bypassItem.target = self
+        bypassItem.state = audioEngine.bypassed ? .on : .off
+        menu.addItem(bypassItem)
 
         // Prevent Clipping toggle
         let clippingItem = NSMenuItem(title: "Prevent Clipping",
@@ -138,14 +147,6 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
     // MARK: - Actions
 
-    @objc private func toggleEQ(_ sender: NSMenuItem) {
-        let newState = !audioEngine.isRunning
-        audioEngine.setEnabled(newState)
-        state.isEnabled = audioEngine.isRunning
-        state.save()
-        updateIcon()
-    }
-
     @objc private func selectPreset(_ sender: NSMenuItem) {
         guard let uuidString = sender.representedObject as? String,
               let id = UUID(uuidString: uuidString),
@@ -179,6 +180,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         state.save()
     }
 
+    @objc private func toggleBypass(_ sender: NSMenuItem) {
+        audioEngine.bypassed.toggle()
+        state.bypassed = audioEngine.bypassed
+        state.save()
+        updateIcon()
+    }
+
     @objc private func toggleClipping(_ sender: NSMenuItem) {
         audioEngine.preventClipping.toggle()
         state.preventClipping = audioEngine.preventClipping
@@ -210,13 +218,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private func updateIcon() {
         if let button = statusItem.button {
             button.title = ""
-            let symbolName = "slider.vertical.3"
+            let symbolName = audioEngine.bypassed ? "slider.vertical.3" : "slider.vertical.3"
             if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "iQualize") {
                 let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
                 button.image = image.withSymbolConfiguration(config)
                 button.image?.isTemplate = true
             }
-            button.appearsDisabled = !audioEngine.isRunning
+            button.appearsDisabled = !audioEngine.isRunning || audioEngine.bypassed
         }
     }
 }

@@ -91,6 +91,10 @@ final class AudioEngine {
         didSet { if isRunning { rebuildEngine() } }
     }
 
+    var bypassed: Bool = false {
+        didSet { applyBands() }
+    }
+
     var maxGainDB: Float = 12
 
     init() {
@@ -273,7 +277,7 @@ final class AudioEngine {
             }
         }
         eqNode.globalGain = preventClipping ? activePreset.preampGain : 0
-        eqNode.bypass = activePreset.isFlat
+        eqNode.bypass = bypassed || activePreset.isFlat
         self.eq = eqNode
 
         avEngine.attach(sourceNode)
@@ -393,7 +397,7 @@ final class AudioEngine {
         }
 
         eq.globalGain = preventClipping ? activePreset.preampGain : 0
-        eq.bypass = activePreset.isFlat
+        eq.bypass = bypassed || activePreset.isFlat
     }
 
     private func rebuildEngine() {
