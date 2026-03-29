@@ -32,7 +32,10 @@ open /Applications/iQualize.app
 
 - Up to 31 bands with editable frequency (20 Hz – 20 kHz), gain, and Q/bandwidth
 - 7 filter types per band: Bell (parametric), Low Shelf, High Shelf, Low Pass, High Pass, Band Pass, and Notch
-- Frequency response curve rendered as a translucent backdrop behind the EQ sliders, with per-filter-type curve shapes and Catmull-Rom spline interpolation
+- Accurate biquad frequency response curve using Audio EQ Cookbook formulas, rendered as a translucent backdrop behind EQ sliders
+- Per-band ghost fills, anchor dots with dB labels, and split boost/cut composite fill
+- Axis labels and detailed frequency/dB grid overlay
+- Catmull-Rom spline interpolation connecting slider knob positions (dashed gray line)
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
 - Anti-clipping preamp — automatically reduces gain to prevent digital clipping
 - Low Latency mode (50ms buffer) for real-time monitoring
@@ -46,7 +49,7 @@ open /Applications/iQualize.app
 
 ### Presets
 
-- Built-in presets: Flat, Bass Boost, Vocal Clarity, Loudness, Treble Boost, Podcast, Techno, Deep House, Hard Techno, Minimal
+- Built-in presets: Flat, Bass Boost, Vocal Clarity, Loudness, Treble Boost, Podcast, Techno, Deep House, Hard Techno, Minimal, American Rap, German Rap
 - Create, rename, overwrite, and delete custom presets
 - Built-in presets auto-fork when edited (non-destructive)
 - Unsaved changes indicator (asterisk in title)
@@ -136,13 +139,13 @@ Prioritized by impact vs effort. Score = impact (1-5) x ease (1-5). Higher = do 
 |---|---|---|---|---|
 | Smart frequency suggestions | 3 | 5 | 15 | New bands fill the largest spectral gap instead of copying the edge band |
 | Keyboard shortcuts for bands | 3 | 5 | 15 | Arrow keys to adjust selected band gain/freq |
-| Visual frequency response curve | 5 | 3 | 15 | Draw the composite EQ curve in the window — biggest UX upgrade |
+| ~~Visual frequency response curve~~ | ~~5~~ | ~~3~~ | ~~15~~ | ✅ Done in v0.11.0 — biquad response curve with ghost fills, anchor dots, axis labels |
 
 ### High impact, moderate effort (score 10-14)
 
 | Feature | Impact | Ease | Score | Notes |
 |---|---|---|---|---|
-| Filter types per band | 5 | 3 | 15 | Bell, low/high shelf, low/high pass, notch, bandpass — AVAudioUnitEQ already supports these filter types natively |
+| ~~Filter types per band~~ | ~~5~~ | ~~3~~ | ~~15~~ | ✅ Done in v0.10.0 — Bell, low/high shelf, low/high pass, notch, bandpass |
 | Per-band bypass | 4 | 3 | 12 | Set individual band gain to 0 without losing saved value, toggle in UI |
 | Drag-on-curve editing | 5 | 2 | 10 | Drag band nodes directly on the response curve — needs hit testing, coordinate mapping |
 | Real-time spectrum analyzer | 5 | 2 | 10 | FFT of audio buffer, render behind EQ curve. Pre/post EQ modes. Huge visual feature |
