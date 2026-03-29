@@ -7,7 +7,15 @@ final class UnitTextField: NSTextField {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { onFocus?() }
+        if result {
+            // Dispatch after field editor is set up, so stringValue change
+            // takes effect and the first keystroke isn't swallowed.
+            DispatchQueue.main.async { [weak self] in
+                self?.onFocus?()
+                // Select all so the user can immediately type a replacement
+                self?.currentEditor()?.selectAll(nil)
+            }
+        }
         return result
     }
 }
