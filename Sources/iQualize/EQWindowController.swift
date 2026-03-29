@@ -392,6 +392,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var deleteButton: NSButton!
     private var importExportButton: NSButton!
     private var curveView: FrequencyResponseView!
+    private var curveDisclosure: NSButton!
+    private var curveHeightConstraint: NSLayoutConstraint!
 
     /// Snapshot of the preset when it was loaded/saved, for reset.
     private var savedPresetSnapshot: EQPresetData?
@@ -404,7 +406,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         self.presetStore = presetStore
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 550),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -412,7 +414,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         window.title = "iQualize"
         window.center()
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 480, height: 550)
+        window.minSize = NSSize(width: 480, height: 420)
 
         super.init(window: window)
 
@@ -552,14 +554,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         topDivider.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
         topDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
-        // Frequency response curve
-        curveView = FrequencyResponseView()
-        curveView.translatesAutoresizingMaskIntoConstraints = false
-        mainStack.addArrangedSubview(curveView)
-        curveView.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
-        curveView.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
-        curveView.heightAnchor.constraint(equalToConstant: 120).isActive = true
-
         // Row 2: Sliders area
         slidersContainer = BandDropTarget()
         slidersContainer.orientation = .horizontal
@@ -575,6 +569,24 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         mainStack.addArrangedSubview(slidersContainer)
         slidersContainer.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
         slidersContainer.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
+
+        // Frequency response curve (collapsible, below bands)
+        curveDisclosure = NSButton(title: "Frequency Response", target: self, action: #selector(toggleCurve(_:)))
+        curveDisclosure.bezelStyle = .disclosure
+        curveDisclosure.setButtonType(.pushOnPushOff)
+        curveDisclosure.state = .off
+        curveDisclosure.font = .systemFont(ofSize: 10)
+        mainStack.addArrangedSubview(curveDisclosure)
+        curveDisclosure.leadingAnchor.constraint(equalTo: slidersContainer.leadingAnchor).isActive = true
+
+        curveView = FrequencyResponseView()
+        curveView.translatesAutoresizingMaskIntoConstraints = false
+        curveView.isHidden = true
+        mainStack.addArrangedSubview(curveView)
+        curveView.leadingAnchor.constraint(equalTo: slidersContainer.leadingAnchor).isActive = true
+        curveView.trailingAnchor.constraint(equalTo: slidersContainer.trailingAnchor).isActive = true
+        curveHeightConstraint = curveView.heightAnchor.constraint(equalToConstant: 120)
+        curveHeightConstraint.isActive = true
 
         // Divider below bands
         let bottomDivider = NSBox()
@@ -960,6 +972,20 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     // MARK: - Actions
+
+    @objc private func toggleCurve(_ sender: NSButton) {
+        let expanded = sender.state == .on
+        curveView.isHidden = !expanded
+
+        // Animate window height change
+        if let window = self.window {
+            let delta: CGFloat = expanded ? 132 : -132  // 120 + spacing
+            var frame = window.frame
+            frame.size.height += delta
+            frame.origin.y -= delta
+            window.setFrame(frame, display: true, animate: true)
+        }
+    }
 
     @objc private func toggleBypass(_ sender: NSButton) {
         audioEngine.bypassed = sender.state == .on
