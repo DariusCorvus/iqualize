@@ -34,6 +34,11 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         audioEngine.lowLatency = state.lowLatency
         audioEngine.setEnabled(true)
         updateIcon()
+
+        // Restore EQ window if it was open when the app last quit
+        if state.windowOpen {
+            openEQWindow()
+        }
     }
 
     // MARK: - NSMenuDelegate — build menu fresh each time it opens
@@ -142,11 +147,27 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     }
 
     @objc private func openEQSettings(_ sender: NSMenuItem) {
+        openEQWindow()
+    }
+
+    func openEQWindow() {
         if eqWindowController == nil {
             eqWindowController = EQWindowController(audioEngine: audioEngine, presetStore: presetStore)
+            // Track window close to persist state
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(windowDidClose(_:)),
+                name: NSWindow.willCloseNotification, object: eqWindowController?.window
+            )
         }
         eqWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+        state.windowOpen = true
+        state.save()
+    }
+
+    @objc private func windowDidClose(_ notification: Notification) {
+        state.windowOpen = false
+        state.save()
     }
 
     @objc private func toggleClipping(_ sender: NSMenuItem) {

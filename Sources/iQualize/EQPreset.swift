@@ -7,12 +7,14 @@ struct iQualizeState: Codable {
     var selectedPresetID: UUID
     var preventClipping: Bool
     var lowLatency: Bool
+    var windowOpen: Bool
 
     static let defaultState = iQualizeState(
         isEnabled: false,
         selectedPresetID: EQPresetData.flat.id,
         preventClipping: true,
-        lowLatency: false
+        lowLatency: false,
+        windowOpen: false
     )
 
     private static let key = "com.iqualize.state"
@@ -29,13 +31,15 @@ struct iQualizeState: Codable {
         case selectedPresetID
         case preventClipping
         case lowLatency
+        case windowOpen
     }
 
-    init(isEnabled: Bool, selectedPresetID: UUID, preventClipping: Bool, lowLatency: Bool = false) {
+    init(isEnabled: Bool, selectedPresetID: UUID, preventClipping: Bool, lowLatency: Bool = false, windowOpen: Bool = false) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.preventClipping = preventClipping
         self.lowLatency = lowLatency
+        self.windowOpen = windowOpen
     }
 
     init(from decoder: Decoder) throws {
@@ -43,6 +47,7 @@ struct iQualizeState: Codable {
         isEnabled = (try? container.decode(Bool.self, forKey: .isEnabled)) ?? false
         preventClipping = (try? container.decode(Bool.self, forKey: .preventClipping)) ?? true
         lowLatency = (try? container.decode(Bool.self, forKey: .lowLatency)) ?? false
+        windowOpen = (try? container.decode(Bool.self, forKey: .windowOpen)) ?? false
 
         if let id = try? container.decode(UUID.self, forKey: .selectedPresetID) {
             selectedPresetID = id
