@@ -905,6 +905,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         buildSliders()
         isModified = false
         resetButton.isEnabled = false
+        populatePresetPicker()
         updateWindowTitle()
     }
 
