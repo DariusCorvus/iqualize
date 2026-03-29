@@ -267,7 +267,7 @@ final class AudioEngine {
         for (i, eqBand) in eqNode.bands.enumerated() {
             if i < activePreset.bands.count {
                 let band = activePreset.bands[i]
-                eqBand.filterType = .parametric
+                eqBand.filterType = band.filterType.avType
                 eqBand.frequency = band.frequency
                 eqBand.bandwidth = band.bandwidth
                 eqBand.gain = band.gain
@@ -371,18 +371,20 @@ final class AudioEngine {
             let eqBand = eq.bands[i]
             if i >= oldCount {
                 // New band — configure fully
-                eqBand.filterType = .parametric
+                eqBand.filterType = band.filterType.avType
                 eqBand.frequency = band.frequency
                 eqBand.bandwidth = band.bandwidth
                 eqBand.gain = band.gain
                 eqBand.bypass = false
             } else if let oldBand = old?.bands[i] {
                 // Existing band — only update changed params
+                if band.filterType != oldBand.filterType { eqBand.filterType = band.filterType.avType }
                 if band.frequency != oldBand.frequency { eqBand.frequency = band.frequency }
                 if band.gain != oldBand.gain { eqBand.gain = band.gain }
                 if band.bandwidth != oldBand.bandwidth { eqBand.bandwidth = band.bandwidth }
             } else {
                 // No old data — write everything
+                eqBand.filterType = band.filterType.avType
                 eqBand.frequency = band.frequency
                 eqBand.gain = band.gain
                 eqBand.bandwidth = band.bandwidth

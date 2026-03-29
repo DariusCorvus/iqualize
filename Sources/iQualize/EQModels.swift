@@ -1,4 +1,41 @@
+import AVFAudio
 import Foundation
+
+// MARK: - Filter Type
+
+enum FilterType: String, Codable, CaseIterable, Equatable, Sendable {
+    case parametric
+    case lowShelf
+    case highShelf
+    case lowPass
+    case highPass
+    case bandPass
+    case notch
+
+    var displayName: String {
+        switch self {
+        case .parametric: return "Bell"
+        case .lowShelf:   return "Lo Shelf"
+        case .highShelf:  return "Hi Shelf"
+        case .lowPass:    return "Lo Pass"
+        case .highPass:   return "Hi Pass"
+        case .bandPass:   return "Band Pass"
+        case .notch:      return "Notch"
+        }
+    }
+
+    var avType: AVAudioUnitEQFilterType {
+        switch self {
+        case .parametric: return .parametric
+        case .lowShelf:   return .lowShelf
+        case .highShelf:  return .highShelf
+        case .lowPass:    return .lowPass
+        case .highPass:   return .highPass
+        case .bandPass:   return .bandPass
+        case .notch:      return .bandStop
+        }
+    }
+}
 
 // MARK: - EQ Band
 
@@ -6,11 +43,21 @@ struct EQBand: Codable, Equatable, Sendable {
     var frequency: Float   // Hz (20...20000)
     var gain: Float        // dB (-12...+12)
     var bandwidth: Float   // octaves, default 1.0
+    var filterType: FilterType
 
-    init(frequency: Float, gain: Float, bandwidth: Float = 1.0) {
+    init(frequency: Float, gain: Float, bandwidth: Float = 1.0, filterType: FilterType = .parametric) {
         self.frequency = frequency
         self.gain = gain
         self.bandwidth = bandwidth
+        self.filterType = filterType
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        frequency = try container.decode(Float.self, forKey: .frequency)
+        gain = try container.decode(Float.self, forKey: .gain)
+        bandwidth = try container.decode(Float.self, forKey: .bandwidth)
+        filterType = try container.decodeIfPresent(FilterType.self, forKey: .filterType) ?? .parametric
     }
 }
 
@@ -30,7 +77,7 @@ struct EQPresetData: Codable, Equatable, Sendable, Identifiable {
     }
 
     var isFlat: Bool {
-        bands.allSatisfy { $0.gain == 0 }
+        bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
     }
 }
 
