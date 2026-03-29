@@ -38,6 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            menuBarController.openEQWindow()
+        }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         audioEngine.stop()
     }

@@ -19,6 +19,15 @@ final class UnitTextField: NSTextField {
 
 @available(macOS 14.2, *)
 @MainActor
+final class ClickThroughView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(nil)
+        super.mouseDown(with: event)
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
 final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private let audioEngine: AudioEngine
     private let presetStore: PresetStore
@@ -65,6 +74,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         setupUI()
         syncUIToPreset()
 
+        // Don't auto-focus any input on open
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeFirstResponder(nil)
+        }
+
         let previousCallback = audioEngine.onStateChange
         audioEngine.onStateChange = { [weak self] in
             previousCallback?()
@@ -79,6 +93,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - UI Setup
 
     private func setupUI() {
+        let clickView = ClickThroughView()
+        window?.contentView = clickView
         guard let contentView = window?.contentView else { return }
         contentView.wantsLayer = true
 
