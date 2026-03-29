@@ -114,21 +114,6 @@ final class FrequencyResponseView: NSView {
         return total
     }
 
-    /// Biquad composite response points at 512 log-spaced frequencies.
-    private func biquadPoints(plotRect: CGRect) -> [CGPoint] {
-        guard !bands.isEmpty else { return [] }
-        let frequencies = BiquadResponse.logFrequencies(count: 512)
-        let gains = BiquadResponse.compositeResponse(
-            bands: bands, sampleRate: sampleRate, frequencies: frequencies)
-        return zip(frequencies, gains).map { freq, gain in
-            let t = log10(freq / 20.0) / 3.0
-            let clamped = min(max(Float(gain), -maxGainDB), maxGainDB)
-            let x = CGFloat(t) * plotRect.width + plotRect.minX
-            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
-            return CGPoint(x: x, y: y)
-        }
-    }
-
     /// Catmull-Rom spline through band control points in pixel-X space.
     /// Uses actual column center positions so the curve passes through every handle.
     private func splinePoints(plotRect: CGRect) -> [CGPoint] {
@@ -192,8 +177,9 @@ final class FrequencyResponseView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let b = bounds
+        let labelMargin: CGFloat = isBackdrop ? 16 : 0
         let inset: CGFloat = isBackdrop ? 0 : 4
-        var plotRect = b.insetBy(dx: inset, dy: inset)
+        var plotRect = b.insetBy(dx: inset + labelMargin, dy: inset)
 
         // In backdrop mode, align the gain axis to the slider track area.
         // Computed here (not in layout()) because the slider lives in a sibling
@@ -231,7 +217,6 @@ final class FrequencyResponseView: NSView {
         ctx.clip(to: plotRect)
 
         let accentColor = NSColor.controlAccentColor
-        let zeroY = plotRect.minY + plotRect.height / 2.0
 
         // ── 1. Grid ──
 
@@ -288,6 +273,8 @@ final class FrequencyResponseView: NSView {
             let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
             return CGPoint(x: x, y: y)
         }
+
+        let zeroY = gainToY(0, height: plotRect.height) + plotRect.minY
 
         // ── 3. Band ghost fills ──
 
@@ -385,6 +372,27 @@ final class FrequencyResponseView: NSView {
                 let innerRect = CGRect(x: x - innerR, y: y - innerR, width: innerR * 2, height: innerR * 2)
                 ctx.setFillColor(accentColor.withAlphaComponent(0.70).cgColor)
                 ctx.fillEllipse(in: innerRect)
+
+                // Anchor dB label
+                let compositeDBf = Float(compositeDB)
+                let labelAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 8, weight: .regular),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                ]
+                let dbText: String
+                if compositeDBf == Float(Int(compositeDBf)) {
+                    dbText = String(format: "%+d", Int(compositeDBf))
+                } else {
+                    dbText = String(format: "%+.1f", compositeDBf)
+                }
+                let str = NSAttributedString(string: dbText, attributes: labelAttrs)
+                let size = str.size()
+                var labelX = x + 6
+                if labelX + size.width > plotRect.maxX {
+                    labelX = x - 6 - size.width
+                }
+                let labelY = min(max(y + 3, plotRect.minY), plotRect.maxY - size.height)
+                str.draw(at: CGPoint(x: labelX, y: labelY))
             }
         }
 
@@ -452,10 +460,55 @@ final class FrequencyResponseView: NSView {
                 let innerRect = CGRect(x: x - innerR, y: y - innerR, width: innerR * 2, height: innerR * 2)
                 ctx.setFillColor(accentColor.withAlphaComponent(0.70).cgColor)
                 ctx.fillEllipse(in: innerRect)
+
+                // Anchor dB label
+                let compositeDBf = Float(compositeDB)
+                let labelAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 8, weight: .regular),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                ]
+                let dbText: String
+                if compositeDBf == Float(Int(compositeDBf)) {
+                    dbText = String(format: "%+d", Int(compositeDBf))
+                } else {
+                    dbText = String(format: "%+.1f", compositeDBf)
+                }
+                let str = NSAttributedString(string: dbText, attributes: labelAttrs)
+                let size = str.size()
+                var labelX = x + 6
+                if labelX + size.width > plotRect.maxX {
+                    labelX = x - 6 - size.width
+                }
+                let labelY = min(max(y + 3, plotRect.minY), plotRect.maxY - size.height)
+                str.draw(at: CGPoint(x: labelX, y: labelY))
             }
         }
 
         ctx.restoreGState()
+
+        // ── dB axis labels — drawn in the 16px margins outside the plot clip ──
+        if isBackdrop {
+            let axisAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 8, weight: .regular),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.20),
+            ]
+            let maxInt = Int(maxGainDB)
+            let axisLabels: [(Float, String)] = [
+                (maxGainDB, "+\(maxInt)"),
+                (0, "0"),
+                (-maxGainDB, "-\(maxInt)"),
+            ]
+            for (db, text) in axisLabels {
+                let y = gainToY(db, height: plotRect.height) + plotRect.minY
+                let str = NSAttributedString(string: text, attributes: axisAttrs)
+                let size = str.size()
+                let centerY = y - size.height / 2.0
+                // Left margin: right-aligned within the 16px gap
+                str.draw(at: CGPoint(x: plotRect.minX - size.width - 2, y: centerY))
+                // Right margin: left-aligned within the 16px gap
+                str.draw(at: CGPoint(x: plotRect.maxX + 2, y: centerY))
+            }
+        }
     }
 }
 
@@ -955,8 +1008,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bandsWrapper.addSubview(slidersContainer)
 
         // Pin curve to fill the wrapper
-        curveView.leadingAnchor.constraint(equalTo: bandsWrapper.leadingAnchor).isActive = true
-        curveView.trailingAnchor.constraint(equalTo: bandsWrapper.trailingAnchor).isActive = true
+        curveView.leadingAnchor.constraint(equalTo: bandsWrapper.leadingAnchor, constant: -16).isActive = true
+        curveView.trailingAnchor.constraint(equalTo: bandsWrapper.trailingAnchor, constant: 16).isActive = true
         curveView.topAnchor.constraint(equalTo: bandsWrapper.topAnchor).isActive = true
         curveView.bottomAnchor.constraint(equalTo: bandsWrapper.bottomAnchor).isActive = true
 
