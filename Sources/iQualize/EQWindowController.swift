@@ -230,84 +230,166 @@ final class FrequencyResponseView: NSView {
         ctx.saveGState()
         ctx.clip(to: plotRect)
 
-        // Grid: 0 dB center line
+        let accentColor = NSColor.controlAccentColor
         let zeroY = plotRect.minY + plotRect.height / 2.0
-        let gridAlpha: CGFloat = isBackdrop ? 0.15 : 1.0
-        ctx.setStrokeColor(NSColor.separatorColor.withAlphaComponent(0.5 * gridAlpha).cgColor)
+
+        // ── 1. Grid ──
+
+        // Frequency grid (vertical lines)
+        let freqGridLines: [Float] = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.04).cgColor)
         ctx.setLineWidth(0.5)
-        ctx.move(to: CGPoint(x: plotRect.minX, y: zeroY))
-        ctx.addLine(to: CGPoint(x: plotRect.maxX, y: zeroY))
-        ctx.strokePath()
-
-        // Dashed dB grid lines
-        let dashPattern: [CGFloat] = [4, 4]
-        ctx.setLineDash(phase: 0, lengths: dashPattern)
-        ctx.setStrokeColor(NSColor.separatorColor.withAlphaComponent(0.15 * gridAlpha).cgColor)
-        let dbStep: Float = maxGainDB <= 12 ? 6 : 12
-        var dbLine = dbStep
-        while dbLine < maxGainDB {
-            for sign: Float in [-1, 1] {
-                let y = gainToY(sign * dbLine, height: plotRect.height) + plotRect.minY
-                ctx.move(to: CGPoint(x: plotRect.minX, y: y))
-                ctx.addLine(to: CGPoint(x: plotRect.maxX, y: y))
-            }
-            dbLine += dbStep
-        }
-        ctx.strokePath()
-
-        // Vertical freq markers
-        let freqMarkers: [Float] = [100, 1000, 10000]
-        for freq in freqMarkers {
+        for freq in freqGridLines {
             let x = freqToX(freq, width: plotRect.width) + plotRect.minX
             ctx.move(to: CGPoint(x: x, y: plotRect.minY))
             ctx.addLine(to: CGPoint(x: x, y: plotRect.maxY))
         }
         ctx.strokePath()
-        ctx.setLineDash(phase: 0, lengths: [])
 
-        // Freq labels (skip in backdrop mode — they'd be hidden by sliders)
-        if !isBackdrop {
-            let labelAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 8),
-                .foregroundColor: NSColor.tertiaryLabelColor,
-            ]
-            for freq in freqMarkers {
-                let x = freqToX(freq, width: plotRect.width) + plotRect.minX
-                let label = freq >= 1000 ? "\(Int(freq / 1000))k" : "\(Int(freq))"
-                let str = NSAttributedString(string: label, attributes: labelAttrs)
-                str.draw(at: CGPoint(x: x + 2, y: plotRect.minY + 1))
+        // dB grid (horizontal lines)
+        let dbStep: Float = 6
+        var dbLine = -maxGainDB
+        while dbLine <= maxGainDB {
+            let y = gainToY(dbLine, height: plotRect.height) + plotRect.minY
+            if abs(dbLine) < 0.1 {
+                // 0 dB line — brighter
+                ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+                ctx.setLineWidth(0.75)
+            } else {
+                ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.04).cgColor)
+                ctx.setLineWidth(0.5)
             }
+            ctx.move(to: CGPoint(x: plotRect.minX, y: y))
+            ctx.addLine(to: CGPoint(x: plotRect.maxX, y: y))
+            ctx.strokePath()
+            dbLine += dbStep
         }
 
-        // Layer 1: Biquad composite response (filled area behind)
-        let biquadPts = biquadPoints(plotRect: plotRect)
-        if !biquadPts.isEmpty {
-            let biquadFill = CGMutablePath()
-            biquadFill.move(to: CGPoint(x: biquadPts[0].x, y: zeroY))
-            for pt in biquadPts { biquadFill.addLine(to: pt) }
-            biquadFill.addLine(to: CGPoint(x: biquadPts.last!.x, y: zeroY))
-            biquadFill.closeSubpath()
+        // ── 2. Biquad computation ──
+
+        let frequencies = BiquadResponse.logFrequencies(count: 512)
+        let allCoeffs = bands.map { BiquadResponse.coefficients(for: $0, sampleRate: sampleRate) }
+
+        // Per-band responses
+        let perBandGains: [[Double]] = allCoeffs.map { coeffs in
+            frequencies.map { coeffs.gainDB(at: $0, sampleRate: sampleRate) }
+        }
+
+        // Composite response
+        let compositeGains: [Double] = (0..<frequencies.count).map { i in
+            perBandGains.reduce(0.0) { $0 + $1[i] }
+        }
+
+        // Map to pixel coordinates
+        let compositePts: [CGPoint] = zip(frequencies, compositeGains).map { freq, gain in
+            let t = log10(freq / 20.0) / 3.0
+            let clamped = min(max(Float(gain), -maxGainDB), maxGainDB)
+            let x = CGFloat(t) * plotRect.width + plotRect.minX
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            return CGPoint(x: x, y: y)
+        }
+
+        // ── 3. Band ghost fills ──
+
+        for bandGains in perBandGains {
+            let ghostPath = CGMutablePath()
+            var first = true
+            for (i, freq) in frequencies.enumerated() {
+                let t = log10(freq / 20.0) / 3.0
+                let clamped = min(max(Float(bandGains[i]), -maxGainDB), maxGainDB)
+                let x = CGFloat(t) * plotRect.width + plotRect.minX
+                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+                if first { ghostPath.move(to: CGPoint(x: x, y: y)); first = false }
+                else { ghostPath.addLine(to: CGPoint(x: x, y: y)) }
+            }
+            // Close to zero line
+            let lastT = log10(frequencies.last! / 20.0) / 3.0
+            let firstT = log10(frequencies.first! / 20.0) / 3.0
+            ghostPath.addLine(to: CGPoint(x: CGFloat(lastT) * plotRect.width + plotRect.minX, y: zeroY))
+            ghostPath.addLine(to: CGPoint(x: CGFloat(firstT) * plotRect.width + plotRect.minX, y: zeroY))
+            ghostPath.closeSubpath()
 
             ctx.saveGState()
-            ctx.addPath(biquadFill)
+            ctx.addPath(ghostPath)
             ctx.clip()
-            let biquadFillAlpha: CGFloat = isBackdrop ? 0.08 : 0.12
-            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(biquadFillAlpha).cgColor)
+            ctx.setFillColor(accentColor.withAlphaComponent(0.035).cgColor)
             ctx.fill(plotRect)
             ctx.restoreGState()
+        }
 
-            // Biquad stroke — slightly different shade to distinguish from spline
-            let biquadStroke = CGMutablePath()
-            biquadStroke.move(to: biquadPts[0])
-            for pt in biquadPts.dropFirst() { biquadStroke.addLine(to: pt) }
-            let biquadStrokeAlpha: CGFloat = isBackdrop ? 0.35 : 0.6
-            ctx.setStrokeColor(NSColor.controlAccentColor.blended(withFraction: 0.3, of: .systemTeal)!.withAlphaComponent(biquadStrokeAlpha).cgColor)
-            ctx.setLineWidth(isBackdrop ? 0.75 : 1.0)
-            ctx.addPath(biquadStroke)
+        // ── 4. Composite fill (different opacity for boost vs cut) ──
+
+        if !compositePts.isEmpty {
+            let fillPath = CGMutablePath()
+            fillPath.move(to: CGPoint(x: compositePts[0].x, y: zeroY))
+            for pt in compositePts { fillPath.addLine(to: pt) }
+            fillPath.addLine(to: CGPoint(x: compositePts.last!.x, y: zeroY))
+            fillPath.closeSubpath()
+
+            ctx.saveGState()
+            ctx.addPath(fillPath)
+            ctx.clip()
+            // Boost region (above zero line)
+            ctx.setFillColor(accentColor.withAlphaComponent(0.10).cgColor)
+            ctx.fill(CGRect(x: plotRect.minX, y: zeroY,
+                            width: plotRect.width, height: plotRect.maxY - zeroY))
+            // Cut region (below zero line)
+            ctx.setFillColor(accentColor.withAlphaComponent(0.06).cgColor)
+            ctx.fill(CGRect(x: plotRect.minX, y: plotRect.minY,
+                            width: plotRect.width, height: zeroY - plotRect.minY))
+            ctx.restoreGState()
+        }
+
+        // ── 5. Composite line ──
+
+        if !compositePts.isEmpty {
+            let curvePath = CGMutablePath()
+            curvePath.move(to: compositePts[0])
+            for pt in compositePts.dropFirst() { curvePath.addLine(to: pt) }
+            ctx.setStrokeColor(accentColor.withAlphaComponent(0.65).cgColor)
+            ctx.setLineWidth(1.5)
+            ctx.setLineJoin(.round)
+            ctx.addPath(curvePath)
             ctx.strokePath()
         }
 
-        // Layer 2: Spline / approximation curve (thin stroke on top)
+        // ── 6. Anchor dots ──
+
+        if isBackdrop {
+            for band in bands {
+                let freq = Double(band.frequency)
+                let compositeDB = allCoeffs.reduce(0.0) { $0 + $1.gainDB(at: freq, sampleRate: sampleRate) }
+                let t = log10(freq / 20.0) / 3.0
+                let clamped = min(max(Float(compositeDB), -maxGainDB), maxGainDB)
+                let x = CGFloat(t) * plotRect.width + plotRect.minX
+                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+
+                // Drop line from anchor to zero
+                ctx.setStrokeColor(accentColor.withAlphaComponent(0.15).cgColor)
+                ctx.setLineWidth(0.75)
+                ctx.move(to: CGPoint(x: x, y: y))
+                ctx.addLine(to: CGPoint(x: x, y: zeroY))
+                ctx.strokePath()
+
+                // Outer circle
+                let outerR: CGFloat = 4
+                let outerRect = CGRect(x: x - outerR, y: y - outerR, width: outerR * 2, height: outerR * 2)
+                ctx.setFillColor(NSColor.controlBackgroundColor.cgColor)
+                ctx.fillEllipse(in: outerRect)
+                ctx.setStrokeColor(accentColor.withAlphaComponent(0.60).cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.strokeEllipse(in: outerRect)
+
+                // Inner dot
+                let innerR: CGFloat = 1.5
+                let innerRect = CGRect(x: x - innerR, y: y - innerR, width: innerR * 2, height: innerR * 2)
+                ctx.setFillColor(accentColor.withAlphaComponent(0.70).cgColor)
+                ctx.fillEllipse(in: innerRect)
+            }
+        }
+
+        // ── 7. Spline (dashed gray, on top) ──
+
         var curvePoints: [CGPoint]
         if isBackdrop {
             curvePoints = splinePoints(plotRect: plotRect)
@@ -316,7 +398,7 @@ final class FrequencyResponseView: NSView {
             curvePoints = []
             for i in 0...sampleCount {
                 let t = Float(i) / Float(sampleCount)
-                let freq = 20.0 * pow(1000.0, t) // 20 to 20000
+                let freq = 20.0 * pow(1000.0, t)
                 let gain = compositeGain(at: freq)
                 let clamped = min(max(gain, -maxGainDB), maxGainDB)
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
@@ -326,34 +408,50 @@ final class FrequencyResponseView: NSView {
         }
 
         if !curvePoints.isEmpty {
-            // Stroke-only — the biquad fill provides the filled area
-            let curvePath = CGMutablePath()
-            curvePath.move(to: curvePoints[0])
-            for pt in curvePoints.dropFirst() { curvePath.addLine(to: pt) }
-            let strokeAlpha: CGFloat = isBackdrop ? 0.4 : 0.6
-            ctx.setStrokeColor(NSColor.secondaryLabelColor.withAlphaComponent(strokeAlpha).cgColor)
+            let splinePath = CGMutablePath()
+            splinePath.move(to: curvePoints[0])
+            for pt in curvePoints.dropFirst() { splinePath.addLine(to: pt) }
+            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.30).cgColor)
             ctx.setLineWidth(isBackdrop ? 0.75 : 1.0)
             ctx.setLineDash(phase: 0, lengths: [4, 3])
-            ctx.addPath(curvePath)
+            ctx.addPath(splinePath)
             ctx.strokePath()
             ctx.setLineDash(phase: 0, lengths: [])
         }
 
-        // Band markers (skip in backdrop mode — sliders serve as markers)
+        // ── 8. Band markers (standalone mode only) ──
+
         if !isBackdrop {
-            let markerRadius: CGFloat = 4
             for band in bands {
-                let x = freqToX(band.frequency, width: plotRect.width) + plotRect.minX
-                let actualGain = compositeGain(at: band.frequency)
-                let clamped = min(max(actualGain, -maxGainDB), maxGainDB)
+                let freq = Double(band.frequency)
+                let compositeDB = allCoeffs.isEmpty ? 0.0 :
+                    allCoeffs.reduce(0.0) { $0 + $1.gainDB(at: freq, sampleRate: sampleRate) }
+                let t = log10(freq / 20.0) / 3.0
+                let clamped = min(max(Float(compositeDB), -maxGainDB), maxGainDB)
+                let x = CGFloat(t) * plotRect.width + plotRect.minX
                 let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
-                let markerRect = CGRect(x: x - markerRadius, y: y - markerRadius,
-                                         width: markerRadius * 2, height: markerRadius * 2)
-                ctx.setFillColor(NSColor.controlAccentColor.cgColor)
-                ctx.fillEllipse(in: markerRect)
-                ctx.setStrokeColor(NSColor.controlBackgroundColor.cgColor)
-                ctx.setLineWidth(1)
-                ctx.strokeEllipse(in: markerRect)
+
+                // Drop line
+                ctx.setStrokeColor(accentColor.withAlphaComponent(0.15).cgColor)
+                ctx.setLineWidth(0.75)
+                ctx.move(to: CGPoint(x: x, y: y))
+                ctx.addLine(to: CGPoint(x: x, y: zeroY))
+                ctx.strokePath()
+
+                // Outer circle
+                let outerR: CGFloat = 4
+                let outerRect = CGRect(x: x - outerR, y: y - outerR, width: outerR * 2, height: outerR * 2)
+                ctx.setFillColor(NSColor.controlBackgroundColor.cgColor)
+                ctx.fillEllipse(in: outerRect)
+                ctx.setStrokeColor(accentColor.withAlphaComponent(0.60).cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.strokeEllipse(in: outerRect)
+
+                // Inner dot
+                let innerR: CGFloat = 1.5
+                let innerRect = CGRect(x: x - innerR, y: y - innerR, width: innerR * 2, height: innerR * 2)
+                ctx.setFillColor(accentColor.withAlphaComponent(0.70).cgColor)
+                ctx.fillEllipse(in: innerRect)
             }
         }
 

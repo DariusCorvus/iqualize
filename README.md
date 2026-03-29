@@ -31,6 +31,8 @@ open /Applications/iQualize.app
 ### Parametric EQ
 
 - Up to 31 bands with editable frequency (20 Hz – 20 kHz), gain, and Q/bandwidth
+- 7 filter types per band: Bell (parametric), Low Shelf, High Shelf, Low Pass, High Pass, Band Pass, and Notch
+- Frequency response curve rendered as a translucent backdrop behind the EQ sliders, with per-filter-type curve shapes and Catmull-Rom spline interpolation
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
 - Anti-clipping preamp — automatically reduces gain to prevent digital clipping
 - Low Latency mode (50ms buffer) for real-time monitoring
@@ -58,8 +60,8 @@ Presets are `.iqpreset` files — plain JSON:
 ```json
 {
   "bands": [
-    { "bandwidth": 1.0, "frequency": 80, "gain": 5 },
-    { "bandwidth": 1.2, "frequency": 200, "gain": -3 }
+    { "bandwidth": 1.0, "filterType": "parametric", "frequency": 80, "gain": 5 },
+    { "bandwidth": 1.2, "filterType": "lowShelf", "frequency": 200, "gain": -3 }
   ],
   "id": "CDE9BB8A-12A5-420C-9619-2790E20030D5",
   "isBuiltIn": false,
@@ -67,7 +69,7 @@ Presets are `.iqpreset` files — plain JSON:
 }
 ```
 
-Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — lower is wider, higher is narrower).
+Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — lower is wider, higher is narrower), `filterType` (one of `parametric`, `lowShelf`, `highShelf`, `lowPass`, `highPass`, `bandPass`, `notch` — defaults to `parametric` if omitted).
 
 ### Undo/Redo
 
