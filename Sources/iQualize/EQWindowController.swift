@@ -625,7 +625,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private func populatePresetPicker() {
         presetPicker.removeAllItems()
         for preset in presetStore.allPresets {
-            presetPicker.addItem(withTitle: preset.name)
+            let title = preset.isBuiltIn ? "\(preset.name) (Built-in)" : preset.name
+            presetPicker.addItem(withTitle: title)
             presetPicker.lastItem?.representedObject = preset.id.uuidString
         }
 
@@ -1065,8 +1066,43 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         let url = URL(fileURLWithPath: path)
         do {
             let data = try Data(contentsOf: url)
-            var preset = try JSONDecoder().decode(EQPresetData.self, from: data)
-            preset = EQPresetData(id: UUID(), name: preset.name, bands: preset.bands, isBuiltIn: false)
+            let decoded = try JSONDecoder().decode(EQPresetData.self, from: data)
+            var importName = decoded.name
+
+            // Check for name conflict with custom presets only (built-in presets are not affected)
+            let customNames = Set(presetStore.customPresets.map(\.name))
+            if customNames.contains(importName) {
+                let alert = NSAlert()
+                alert.messageText = "A preset named \"\(importName)\" already exists."
+                alert.informativeText = "Enter a new name or click Replace to overwrite."
+                alert.addButton(withTitle: "Import")
+                alert.addButton(withTitle: "Replace Existing")
+                alert.addButton(withTitle: "Cancel")
+
+                let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+                nameField.stringValue = importName
+                nameField.isEditable = true
+                nameField.isSelectable = true
+                alert.accessoryView = nameField
+                alert.window.initialFirstResponder = nameField
+
+                let response = alert.runModal()
+                if response == .alertThirdButtonReturn { return } // Cancel
+
+                if response == .alertFirstButtonReturn {
+                    // Import with new name
+                    let newName = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+                    if newName.isEmpty { return }
+                    importName = newName
+                } else {
+                    // Replace — delete the existing preset with that name
+                    if let existing = presetStore.allPresets.first(where: { $0.name == importName }), !existing.isBuiltIn {
+                        presetStore.deleteCustomPreset(id: existing.id)
+                    }
+                }
+            }
+
+            let preset = EQPresetData(id: UUID(), name: importName, bands: decoded.bands, isBuiltIn: false)
             presetStore.saveCustomPreset(preset)
             audioEngine.activePreset = preset
             syncUIToPreset()
