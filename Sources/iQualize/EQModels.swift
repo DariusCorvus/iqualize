@@ -74,7 +74,7 @@ struct EQPresetData: Codable, Equatable, Sendable, Identifiable {
     }
 
     var isFlat: Bool {
-        bands.allSatisfy { $0.gain == 0 }
+        bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
     }
 }
 

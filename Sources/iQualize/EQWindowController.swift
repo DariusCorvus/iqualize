@@ -1158,7 +1158,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         // Use the band the user clicked as the reference (for "right", look back one index)
         let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
         let reference = refIndex < preset.bands.count ? preset.bands[refIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
-        preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth), at: clampedIndex)
+        preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth, filterType: reference.filterType), at: clampedIndex)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
@@ -1237,7 +1237,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         let leftmost = preset.bands.first ?? EQBand(frequency: 100, gain: 0)
-        preset.bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth), at: 0)
+        preset.bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth, filterType: leftmost.filterType), at: 0)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
@@ -1250,7 +1250,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
-        preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth))
+        preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth, filterType: rightmost.filterType))
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
