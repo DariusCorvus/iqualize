@@ -34,9 +34,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     private var eqToggle: NSButton!
     private var presetPicker: NSPopUpButton!
-    private var addBandButton: NSButton!
-    private var removeBandButton: NSButton!
-    private var bandCountLabel: NSTextField!
     private var slidersContainer: NSStackView!
     private var sliders: [NSSlider] = []
     private var gainLabels: [UnitTextField] = []
@@ -139,32 +136,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         presetRow.addArrangedSubview(deleteButton)
         mainStack.addArrangedSubview(presetRow)
 
-        // Row 2: Band count — add/remove
-        let bandRow = NSStackView()
-        bandRow.orientation = .horizontal
-        bandRow.spacing = 8
+        // Divider above bands
+        let topDivider = NSBox()
+        topDivider.boxType = .separator
+        mainStack.addArrangedSubview(topDivider)
+        topDivider.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32).isActive = true
 
-        let bandLabel = NSTextField(labelWithString: "Bands:")
-
-        bandCountLabel = NSTextField(labelWithString: "")
-        bandCountLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        bandCountLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        removeBandButton = NSButton(title: "−", target: self, action: #selector(removeBand(_:)))
-        removeBandButton.bezelStyle = .rounded
-        removeBandButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        addBandButton = NSButton(title: "+", target: self, action: #selector(addBand(_:)))
-        addBandButton.bezelStyle = .rounded
-        addBandButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        bandRow.addArrangedSubview(bandLabel)
-        bandRow.addArrangedSubview(removeBandButton)
-        bandRow.addArrangedSubview(bandCountLabel)
-        bandRow.addArrangedSubview(addBandButton)
-        mainStack.addArrangedSubview(bandRow)
-
-        // Row 3: Sliders area
+        // Row 2: Sliders area
         slidersContainer = NSStackView()
         slidersContainer.orientation = .horizontal
         slidersContainer.alignment = .bottom
@@ -177,7 +155,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slidersContainer.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32),
         ])
 
-        // Row 4: Bottom bar — EQ Enabled (left) + Prevent Clipping (right)
+        // Divider below bands
+        let bottomDivider = NSBox()
+        bottomDivider.boxType = .separator
+        mainStack.addArrangedSubview(bottomDivider)
+        bottomDivider.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -32).isActive = true
+
+        // Row 3: Bottom bar — EQ Enabled (left) + Prevent Clipping (right)
         eqToggle = NSButton(checkboxWithTitle: "EQ Enabled", target: self, action: #selector(toggleEQ(_:)))
         eqToggle.state = audioEngine.isRunning ? .on : .off
 
@@ -229,6 +213,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         qLabels.removeAll()
 
         let bands = audioEngine.activePreset.bands
+        let canAdd = bands.count < EQPresetData.maxBandCount
+        var firstSlider: NSSlider?
+
+        // Left "+" placeholder
+        var leftAddButton: NSView?
+        if canAdd {
+            let add = makeAddButton(side: .left)
+            leftAddButton = add
+            slidersContainer.addArrangedSubview(add)
+        }
 
         for (i, band) in bands.enumerated() {
             let column = NSStackView()
@@ -259,6 +253,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slider.tag = i
             slider.translatesAutoresizingMaskIntoConstraints = false
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
+            if firstSlider == nil { firstSlider = slider }
             sliders.append(slider)
 
             let freqLabel = UnitTextField(string: band.frequencyLabel)
@@ -296,7 +291,33 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             column.addArrangedSubview(freqLabel)
             column.addArrangedSubview(qLabel)
 
+            // Right-click to delete band
+            let menu = NSMenu()
+            let deleteItem = NSMenuItem(title: "Delete Band", action: #selector(deleteBandFromMenu(_:)), keyEquivalent: "")
+            deleteItem.target = self
+            deleteItem.tag = i
+            menu.addItem(deleteItem)
+            column.menu = menu
+
             slidersContainer.addArrangedSubview(column)
+        }
+
+        // Right "+" placeholder
+        var rightAddButton: NSView?
+        if canAdd {
+            let add = makeAddButton(side: .right)
+            rightAddButton = add
+            slidersContainer.addArrangedSubview(add)
+        }
+
+        // Align + buttons to the first slider's vertical center
+        if let slider = firstSlider {
+            if let btn = leftAddButton?.subviews.first {
+                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
+            }
+            if let btn = rightAddButton?.subviews.first {
+                btn.centerYAnchor.constraint(equalTo: slider.centerYAnchor).isActive = true
+            }
         }
 
         let neededWidth = CGFloat(bands.count * 40 + 32)
@@ -307,7 +328,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             window.setFrame(frame, display: true, animate: true)
         }
 
-        updateBandButtons()
     }
 
     // MARK: - Sync UI ↔ Engine
@@ -370,12 +390,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         eqToggle.state = audioEngine.isRunning ? .on : .off
     }
 
-    private func updateBandButtons() {
-        let count = audioEngine.activePreset.bands.count
-        removeBandButton.isEnabled = count > EQPresetData.minBandCount
-        addBandButton.isEnabled = count < EQPresetData.maxBandCount
-        bandCountLabel.stringValue = "\(count)"
-    }
 
     /// If the active preset is built-in, fork it into a custom copy before editing.
     /// Returns the mutable preset to modify.
@@ -428,6 +442,73 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         var state = iQualizeState.load()
         state.lowLatency = audioEngine.lowLatency
         state.save()
+    }
+
+    private enum AddSide { case left, right }
+
+    private func makeAddButton(side: AddSide) -> NSView {
+        let wrapper = NSView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+
+        let button = NSButton(title: "+", target: self,
+                              action: side == .left ? #selector(addBandLeft(_:)) : #selector(addBandRight(_:)))
+        button.bezelStyle = .rounded
+        button.font = .systemFont(ofSize: 16, weight: .light)
+        button.isBordered = false
+        button.translatesAutoresizingMaskIntoConstraints = false
+
+        wrapper.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
+            wrapper.widthAnchor.constraint(equalToConstant: 24),
+        ])
+
+        return wrapper
+    }
+
+    @objc private func deleteBandFromMenu(_ sender: NSMenuItem) {
+        let index = sender.tag
+        guard index < audioEngine.activePreset.bands.count,
+              audioEngine.activePreset.bands.count > EQPresetData.minBandCount else { return }
+
+        let band = audioEngine.activePreset.bands[index]
+        let alert = NSAlert()
+        alert.messageText = "Delete Band?"
+        alert.informativeText = "Remove the \(band.frequencyLabel) band at \(band.gainLabel)?"
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        preset.bands.remove(at: index)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+    }
+
+    @objc private func addBandLeft(_ sender: NSButton) {
+        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        let leftmost = preset.bands.first ?? EQBand(frequency: 100, gain: 0)
+        preset.bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth), at: 0)
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+    }
+
+    @objc private func addBandRight(_ sender: NSButton) {
+        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
+        preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth))
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
     }
 
     // MARK: - NSTextFieldDelegate (editable dB / Hz / Q inputs)
@@ -498,32 +579,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         resetButton.isEnabled = false
         updateWindowTitle()
         saveState()
-    }
-
-    @objc private func addBand(_ sender: NSButton) {
-        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
-        forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        let newFreq = preset.suggestNewBandFrequency()
-        let newBand = EQBand(frequency: newFreq, gain: 0)
-        preset.bands.append(newBand)
-        preset.bands.sort { $0.frequency < $1.frequency }
-        audioEngine.activePreset = preset
-
-        buildSliders()
-        markModified()
-    }
-
-    @objc private func removeBand(_ sender: NSButton) {
-        guard audioEngine.activePreset.bands.count > EQPresetData.minBandCount else { return }
-        forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        // Remove the last band
-        preset.bands.removeLast()
-        audioEngine.activePreset = preset
-
-        buildSliders()
-        markModified()
     }
 
     @objc private func sliderMoved(_ sender: NSSlider) {
