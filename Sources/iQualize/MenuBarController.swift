@@ -32,6 +32,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         }
         audioEngine.preventClipping = state.preventClipping
         audioEngine.lowLatency = state.lowLatency
+        audioEngine.maxGainDB = state.maxGainDB
         audioEngine.setEnabled(true)
         updateIcon()
 

@@ -95,6 +95,8 @@ final class AudioEngine {
         didSet { if isRunning { rebuildEngine() } }
     }
 
+    var maxGainDB: Float = 12
+
     init() {
         do {
             let deviceID = try getDefaultOutputDeviceID()
