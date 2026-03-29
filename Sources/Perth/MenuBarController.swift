@@ -25,6 +25,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
         // Restore saved state
         audioEngine.selectedPreset = state.selectedPreset
+        audioEngine.preventClipping = state.preventClipping
         if state.isEnabled {
             audioEngine.setEnabled(true)
             updateIcon()
@@ -59,6 +60,15 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             item.state = audioEngine.selectedPreset == preset ? .on : .off
             menu.addItem(item)
         }
+
+        menu.addItem(.separator())
+
+        // Prevent Clipping toggle
+        let clippingItem = NSMenuItem(title: "Prevent Clipping",
+                                       action: #selector(toggleClipping(_:)), keyEquivalent: "")
+        clippingItem.target = self
+        clippingItem.state = audioEngine.preventClipping ? .on : .off
+        menu.addItem(clippingItem)
 
         menu.addItem(.separator())
 
@@ -104,6 +114,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
               let preset = EQPreset(rawValue: rawValue) else { return }
         audioEngine.selectedPreset = preset
         state.selectedPreset = preset
+        state.save()
+    }
+
+    @objc private func toggleClipping(_ sender: NSMenuItem) {
+        audioEngine.preventClipping.toggle()
+        state.preventClipping = audioEngine.preventClipping
         state.save()
     }
 

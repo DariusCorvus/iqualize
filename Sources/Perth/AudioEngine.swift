@@ -3,6 +3,9 @@ import AudioToolbox
 import AVFAudio
 import Foundation
 import Observation
+import os.log
+
+private let perthLog = OSLog(subsystem: "com.perth", category: "audio")
 
 // MARK: - Real-time Audio Callbacks (free functions, no actor isolation)
 // These run on Core Audio's IO thread. They MUST be free functions — not closures
@@ -75,6 +78,10 @@ final class AudioEngine {
     var onStateChange: (() -> Void)?
 
     var selectedPreset: EQPreset = .flat {
+        didSet { applyCurrentPreset() }
+    }
+
+    var preventClipping: Bool = true {
         didSet { applyCurrentPreset() }
     }
 
@@ -155,8 +162,27 @@ final class AudioEngine {
             AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &formatSize, &tapFormat),
             "Failed to get tap format"
         )
-        let sampleRate = tapFormat.mSampleRate
+        let tapSampleRate = tapFormat.mSampleRate
         let channels = tapFormat.mChannelsPerFrame
+
+        // Read the output device's native sample rate for comparison
+        var nominalRateAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceSampleRate: Float64 = 0
+        var rateSize = UInt32(MemoryLayout<Float64>.size)
+        AudioObjectGetPropertyData(outputDeviceID, &nominalRateAddress, 0, nil, &rateSize, &deviceSampleRate)
+
+        // Use the output device's native sample rate for AVAudioEngine.
+        // The tap may capture at a different rate (e.g., 48kHz tap vs 44.1kHz Bluetooth).
+        // The aggregate device handles resampling between the tap and the IOProc.
+        let sampleRate = deviceSampleRate > 0 ? deviceSampleRate : tapSampleRate
+
+        os_log(.default, log: perthLog,
+               "tapRate: %{public}.0f  deviceRate: %{public}.0f  using: %{public}.0f  channels: %{public}u  device: %{public}@",
+               tapSampleRate, deviceSampleRate, sampleRate, channels, outputDeviceName as NSString)
 
         // 4. Create aggregate device with tap and output device in the creation dictionary.
         //    The tap list MUST be included at creation time — adding it later via
@@ -207,6 +233,18 @@ final class AudioEngine {
         rtChannelCount = channels
 
         let avEngine = AVAudioEngine()
+
+        // Explicitly set output to the real hardware device so Perth's playback
+        // goes directly to hardware, matching the gain staging of the original audio.
+        var outputID = outputDeviceID
+        let outputAU = avEngine.outputNode.audioUnit!
+        AudioUnitSetProperty(
+            outputAU,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global, 0,
+            &outputID, UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
                                    channels: AVAudioChannelCount(channels))!
 
@@ -221,13 +259,14 @@ final class AudioEngine {
             band.gain = selectedPreset.bands[i]
             band.bypass = false
         }
-        eqNode.globalGain = 0.0
+        eqNode.globalGain = preventClipping ? selectedPreset.preampGain : 0
+        eqNode.bypass = (selectedPreset == .flat)
         self.eq = eqNode
 
         avEngine.attach(sourceNode)
         avEngine.attach(eqNode)
         avEngine.connect(sourceNode, to: eqNode, format: format)
-        avEngine.connect(eqNode, to: avEngine.mainMixerNode, format: format)
+        avEngine.connect(eqNode, to: avEngine.outputNode, format: format)
 
         try avEngine.start()
         self.engine = avEngine
@@ -312,6 +351,8 @@ final class AudioEngine {
         for (i, gain) in gains.enumerated() {
             eq.bands[i].gain = gain
         }
+        eq.globalGain = preventClipping ? selectedPreset.preampGain : 0
+        eq.bypass = (selectedPreset == .flat)
     }
 
     // MARK: - Device Change Handling

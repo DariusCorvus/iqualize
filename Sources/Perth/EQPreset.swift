@@ -26,6 +26,15 @@ enum EQPreset: String, CaseIterable, Codable {
         }
     }
 
+    /// Automatic preamp reduction to prevent clipping.
+    /// Uses half the max boost as a compromise between clipping prevention and volume.
+    /// Full reduction (-maxBoost) is too quiet; no reduction clips on loud passages.
+    /// Half reduction keeps most content clean while staying closer to original volume.
+    var preampGain: Float {
+        let maxBoost = bands.max() ?? 0
+        return maxBoost > 0 ? -(maxBoost * 0.5) : 0
+    }
+
     static let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
     static let bandCount = 10
 }
@@ -35,8 +44,9 @@ enum EQPreset: String, CaseIterable, Codable {
 struct PerthState: Codable {
     var isEnabled: Bool
     var selectedPreset: EQPreset
+    var preventClipping: Bool
 
-    static let defaultState = PerthState(isEnabled: false, selectedPreset: .flat)
+    static let defaultState = PerthState(isEnabled: false, selectedPreset: .flat, preventClipping: true)
 
     private static let key = "com.perth.state"
 
