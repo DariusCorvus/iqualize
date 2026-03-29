@@ -2,7 +2,7 @@ import CoreAudio
 
 func caCheck(_ status: OSStatus, _ message: String) throws {
     guard status == noErr else {
-        throw NSError(domain: "Perth", code: Int(status),
+        throw NSError(domain: "iQualize", code: Int(status),
                       userInfo: [NSLocalizedDescriptionKey: "\(message): OSStatus \(status)"])
     }
 }

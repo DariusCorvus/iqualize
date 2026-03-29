@@ -7,6 +7,7 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController!
     private var audioEngine: AudioEngine!
+    private var presetStore: PresetStore!
     private var wasRunningBeforeSleep = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -17,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         audioEngine = AudioEngine()
-        menuBarController = MenuBarController(audioEngine: audioEngine)
+        presetStore = PresetStore()
+        menuBarController = MenuBarController(audioEngine: audioEngine, presetStore: presetStore)
 
         // Sleep/wake handling
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -59,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Entry Point
 
 @main
-struct PerthMain {
+struct iQualizeMain {
     // Strong reference — NSApplication.delegate is weak, so without this
     // Swift can deallocate the AppDelegate (and the entire menu bar icon).
     nonisolated(unsafe) static var appDelegate: AnyObject?
@@ -76,7 +78,7 @@ struct PerthMain {
             let app = NSApplication.shared
             app.setActivationPolicy(.regular)
             let alert = NSAlert()
-            alert.messageText = "Perth requires macOS 14.2 or newer"
+            alert.messageText = "iQualize requires macOS 14.2 or newer"
             alert.informativeText = "Core Audio Taps are only available on macOS 14.2+."
             alert.runModal()
         }

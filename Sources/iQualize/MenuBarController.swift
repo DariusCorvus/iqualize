@@ -5,11 +5,14 @@ import AppKit
 final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let audioEngine: AudioEngine
-    private var state: PerthState
+    private let presetStore: PresetStore
+    private var state: iQualizeState
+    private var eqWindowController: EQWindowController?
 
-    init(audioEngine: AudioEngine) {
+    init(audioEngine: AudioEngine, presetStore: PresetStore) {
         self.audioEngine = audioEngine
-        self.state = PerthState.load()
+        self.presetStore = presetStore
+        self.state = iQualizeState.load()
         super.init()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -23,13 +26,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             self?.updateIcon()
         }
 
-        // Restore saved state
-        audioEngine.selectedPreset = state.selectedPreset
-        audioEngine.preventClipping = state.preventClipping
-        if state.isEnabled {
-            audioEngine.setEnabled(true)
-            updateIcon()
+        // Restore saved state and always start EQ
+        if let preset = presetStore.preset(for: state.selectedPresetID) {
+            audioEngine.activePreset = preset
         }
+        audioEngine.preventClipping = state.preventClipping
+        audioEngine.setEnabled(true)
+        updateIcon()
     }
 
     // MARK: - NSMenuDelegate — build menu fresh each time it opens
@@ -41,24 +44,27 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private func populateMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // EQ Toggle
-        let toggleItem = NSMenuItem(title: audioEngine.isRunning ? "EQ On" : "EQ Off",
-                                     action: #selector(toggleEQ(_:)), keyEquivalent: "e")
-        toggleItem.keyEquivalentModifierMask = [.command]
-        toggleItem.target = self
-        toggleItem.state = audioEngine.isRunning ? .on : .off
-        menu.addItem(toggleItem)
-
-        menu.addItem(.separator())
-
-        // Presets (radio group)
-        for preset in EQPreset.allCases {
-            let item = NSMenuItem(title: preset.displayName,
+        // Built-in presets (radio group)
+        for preset in EQPresetData.builtInPresets {
+            let item = NSMenuItem(title: preset.name,
                                   action: #selector(selectPreset(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = preset.rawValue
-            item.state = audioEngine.selectedPreset == preset ? .on : .off
+            item.representedObject = preset.id.uuidString
+            item.state = audioEngine.activePreset.id == preset.id ? .on : .off
             menu.addItem(item)
+        }
+
+        // Custom presets (if any)
+        if !presetStore.customPresets.isEmpty {
+            menu.addItem(.separator())
+            for preset in presetStore.customPresets {
+                let item = NSMenuItem(title: preset.name,
+                                      action: #selector(selectPreset(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = preset.id.uuidString
+                item.state = audioEngine.activePreset.id == preset.id ? .on : .off
+                menu.addItem(item)
+            }
         }
 
         menu.addItem(.separator())
@@ -69,6 +75,15 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         clippingItem.target = self
         clippingItem.state = audioEngine.preventClipping ? .on : .off
         menu.addItem(clippingItem)
+
+        menu.addItem(.separator())
+
+        // Open standalone window
+        let openItem = NSMenuItem(title: "Open iQualize",
+                                   action: #selector(openEQSettings(_:)), keyEquivalent: ",")
+        openItem.keyEquivalentModifierMask = [.command]
+        openItem.target = self
+        menu.addItem(openItem)
 
         menu.addItem(.separator())
 
@@ -88,13 +103,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         menu.addItem(.separator())
 
         // About
-        let aboutItem = NSMenuItem(title: "About Perth", action: #selector(showAbout(_:)),
+        let aboutItem = NSMenuItem(title: "About iQualize", action: #selector(showAbout(_:)),
                                     keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 
         // Quit
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit iQualize", action: #selector(quit(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
     }
@@ -110,11 +125,20 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     }
 
     @objc private func selectPreset(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
-              let preset = EQPreset(rawValue: rawValue) else { return }
-        audioEngine.selectedPreset = preset
-        state.selectedPreset = preset
+        guard let uuidString = sender.representedObject as? String,
+              let id = UUID(uuidString: uuidString),
+              let preset = presetStore.preset(for: id) else { return }
+        audioEngine.activePreset = preset
+        state.selectedPresetID = preset.id
         state.save()
+    }
+
+    @objc private func openEQSettings(_ sender: NSMenuItem) {
+        if eqWindowController == nil {
+            eqWindowController = EQWindowController(audioEngine: audioEngine, presetStore: presetStore)
+        }
+        eqWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func toggleClipping(_ sender: NSMenuItem) {
@@ -125,8 +149,8 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
     @objc private func showAbout(_ sender: NSMenuItem) {
         let alert = NSAlert()
-        alert.messageText = "Perth"
-        alert.informativeText = "System-wide audio equalizer for macOS.\nVersion 0.1"
+        alert.messageText = "iQualize"
+        alert.informativeText = "System-wide audio equalizer for macOS.\nVersion 0.2"
         alert.alertStyle = .informational
         alert.runModal()
     }
@@ -141,13 +165,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private func updateIcon() {
         if let button = statusItem.button {
             button.title = ""
-            let symbolName = audioEngine.isRunning ? "slider.vertical.3" : "slider.vertical.3"
-            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Perth EQ") {
+            let symbolName = "slider.vertical.3"
+            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "iQualize") {
                 let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
                 button.image = image.withSymbolConfiguration(config)
                 button.image?.isTemplate = true
             }
-            // Indicate active state with a badge-style approach
             button.appearsDisabled = !audioEngine.isRunning
         }
     }

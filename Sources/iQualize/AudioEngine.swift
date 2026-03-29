@@ -5,7 +5,7 @@ import Foundation
 import Observation
 import os.log
 
-private let perthLog = OSLog(subsystem: "com.perth", category: "audio")
+private let appLog = OSLog(subsystem: "com.iqualize", category: "audio")
 
 // MARK: - Real-time Audio Callbacks (free functions, no actor isolation)
 // These run on Core Audio's IO thread. They MUST be free functions — not closures
@@ -77,12 +77,18 @@ final class AudioEngine {
     nonisolated(unsafe) private var deviceChangeListenerBlock: AudioObjectPropertyListenerBlock?
     var onStateChange: (() -> Void)?
 
-    var selectedPreset: EQPreset = .flat {
-        didSet { applyCurrentPreset() }
+    var activePreset: EQPresetData = .flat {
+        didSet {
+            if oldValue.bands.count != activePreset.bands.count {
+                if isRunning { rebuildEngine() }
+            } else {
+                applyBands()
+            }
+        }
     }
 
     var preventClipping: Bool = true {
-        didSet { applyCurrentPreset() }
+        didSet { applyBands() }
     }
 
     init() {
@@ -120,7 +126,7 @@ final class AudioEngine {
         outputDeviceName = try getDeviceName(outputDeviceID)
 
         // 1. Translate our PID → AudioObjectID so we can exclude ourselves from the tap.
-        //    Without this, the muted tap silences Perth's own AVAudioEngine output.
+        //    Without this, the muted tap silences iQualize's own AVAudioEngine output.
         var translateAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -135,14 +141,14 @@ final class AudioEngine {
             &processObjectSize, &myProcessObjectID
         )
 
-        // 2. Create global tap (muted), excluding Perth's own process
+        // 2. Create global tap (muted), excluding iQualize's own process
         tapUUID = UUID()
         let excludeProcesses: [AudioObjectID] = myProcessObjectID != kAudioObjectUnknown
             ? [myProcessObjectID] : []
         let tapDesc = CATapDescription(stereoGlobalTapButExcludeProcesses: excludeProcesses)
         tapDesc.uuid = tapUUID
         tapDesc.muteBehavior = .muted
-        tapDesc.name = "Perth-EQ"
+        tapDesc.name = "iQualize-EQ"
 
         tapID = AudioObjectID(kAudioObjectUnknown)
         try caCheck(
@@ -180,7 +186,7 @@ final class AudioEngine {
         // The aggregate device handles resampling between the tap and the IOProc.
         let sampleRate = deviceSampleRate > 0 ? deviceSampleRate : tapSampleRate
 
-        os_log(.default, log: perthLog,
+        os_log(.default, log: appLog,
                "tapRate: %{public}.0f  deviceRate: %{public}.0f  using: %{public}.0f  channels: %{public}u  device: %{public}@",
                tapSampleRate, deviceSampleRate, sampleRate, channels, outputDeviceName as NSString)
 
@@ -189,7 +195,7 @@ final class AudioEngine {
         //    kAudioAggregateDevicePropertyTapList delivers zero-filled buffers.
         let aggregateUID = UUID().uuidString
         let aggregateDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Perth-Aggregate",
+            kAudioAggregateDeviceNameKey: "iQualize-Aggregate",
             kAudioAggregateDeviceUIDKey: aggregateUID,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
@@ -234,7 +240,7 @@ final class AudioEngine {
 
         let avEngine = AVAudioEngine()
 
-        // Explicitly set output to the real hardware device so Perth's playback
+        // Explicitly set output to the real hardware device so iQualize's playback
         // goes directly to hardware, matching the gain staging of the original audio.
         var outputID = outputDeviceID
         let outputAU = avEngine.outputNode.audioUnit!
@@ -250,17 +256,17 @@ final class AudioEngine {
 
         let sourceNode = AVAudioSourceNode(format: format, renderBlock: renderCallback)
 
-        let eqNode = AVAudioUnitEQ(numberOfBands: EQPreset.bandCount)
-        for (i, freq) in EQPreset.frequencies.enumerated() {
-            let band = eqNode.bands[i]
-            band.filterType = .parametric
-            band.frequency = freq
-            band.bandwidth = 1.0
-            band.gain = selectedPreset.bands[i]
-            band.bypass = false
+        let eqNode = AVAudioUnitEQ(numberOfBands: activePreset.bands.count)
+        for (i, band) in activePreset.bands.enumerated() {
+            let eqBand = eqNode.bands[i]
+            eqBand.filterType = .parametric
+            eqBand.frequency = band.frequency
+            eqBand.bandwidth = band.bandwidth
+            eqBand.gain = band.gain
+            eqBand.bypass = false
         }
-        eqNode.globalGain = preventClipping ? selectedPreset.preampGain : 0
-        eqNode.bypass = (selectedPreset == .flat)
+        eqNode.globalGain = preventClipping ? activePreset.preampGain : 0
+        eqNode.bypass = activePreset.isFlat
         self.eq = eqNode
 
         avEngine.attach(sourceNode)
@@ -345,14 +351,27 @@ final class AudioEngine {
         }
     }
 
-    private func applyCurrentPreset() {
+    private func applyBands() {
         guard let eq else { return }
-        let gains = selectedPreset.bands
-        for (i, gain) in gains.enumerated() {
-            eq.bands[i].gain = gain
+        for (i, band) in activePreset.bands.enumerated() {
+            eq.bands[i].frequency = band.frequency
+            eq.bands[i].gain = band.gain
+            eq.bands[i].bandwidth = band.bandwidth
         }
-        eq.globalGain = preventClipping ? selectedPreset.preampGain : 0
-        eq.bypass = (selectedPreset == .flat)
+        eq.globalGain = preventClipping ? activePreset.preampGain : 0
+        eq.bypass = activePreset.isFlat
+    }
+
+    private func rebuildEngine() {
+        let wasRunning = isRunning
+        if wasRunning { stop() }
+        if wasRunning {
+            do {
+                try start()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Device Change Handling
