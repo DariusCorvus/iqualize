@@ -51,25 +51,33 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private func populateMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // Built-in presets (radio group)
+        // Built-in presets
+        let builtInHeader = NSMenuItem(title: "Built-in", action: nil, keyEquivalent: "")
+        builtInHeader.isEnabled = false
+        menu.addItem(builtInHeader)
         for preset in EQPresetData.builtInPresets {
             let item = NSMenuItem(title: preset.name,
                                   action: #selector(selectPreset(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = preset.id.uuidString
             item.state = audioEngine.activePreset.id == preset.id ? .on : .off
+            item.indentationLevel = 1
             menu.addItem(item)
         }
 
         // Custom presets (if any)
         if !presetStore.customPresets.isEmpty {
             menu.addItem(.separator())
+            let customHeader = NSMenuItem(title: "Custom", action: nil, keyEquivalent: "")
+            customHeader.isEnabled = false
+            menu.addItem(customHeader)
             for preset in presetStore.customPresets {
                 let item = NSMenuItem(title: preset.name,
                                       action: #selector(selectPreset(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = preset.id.uuidString
                 item.state = audioEngine.activePreset.id == preset.id ? .on : .off
+                item.indentationLevel = 1
                 menu.addItem(item)
             }
         }

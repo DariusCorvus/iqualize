@@ -29,4 +29,7 @@ fi
 # Always update Info.plist
 cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
 
+# Strip provenance xattr to prevent macOS security policy launch blocks
+xattr -rc "$APP" 2>/dev/null
+
 echo "Installed to /Applications/iQualize.app"
