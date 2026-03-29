@@ -393,6 +393,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var importExportButton: NSButton!
     private var curveView: FrequencyResponseView!
     private var curveToggle: NSButton!
+    private var curveWidthConstraints: [NSLayoutConstraint] = []
 
     /// Snapshot of the preset when it was loaded/saved, for reset.
     private var savedPresetSnapshot: EQPresetData?
@@ -597,10 +598,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView.isHidden = true
         curveView.heightAnchor.constraint(equalToConstant: 120).isActive = true
         bandsAndCurve.addArrangedSubview(curveView)
-
-        // Curve matches full bands row width (including + buttons)
-        curveView.leadingAnchor.constraint(equalTo: bandsAndCurve.leadingAnchor).isActive = true
-        curveView.trailingAnchor.constraint(equalTo: bandsAndCurve.trailingAnchor).isActive = true
 
         mainStack.addArrangedSubview(bandsAndCurve)
         bandsAndCurve.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
@@ -835,6 +832,17 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             let newWidth = max(bandsWidth, window.minSize.width)
             frame.size.width = newWidth
             window.setFrame(frame, display: true, animate: true)
+        }
+
+        // Constrain curve width to band columns (excluding + buttons)
+        NSLayoutConstraint.deactivate(curveWidthConstraints)
+        curveWidthConstraints = []
+        let bandColumns = slidersContainer.arrangedSubviews.filter { $0 is DraggableBandColumn }
+        if let first = bandColumns.first, let last = bandColumns.last {
+            let leading = curveView.leadingAnchor.constraint(equalTo: first.leadingAnchor)
+            let trailing = curveView.trailingAnchor.constraint(equalTo: last.trailingAnchor)
+            curveWidthConstraints = [leading, trailing]
+            NSLayoutConstraint.activate(curveWidthConstraints)
         }
 
         updateCurveView()
