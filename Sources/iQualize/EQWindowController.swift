@@ -452,14 +452,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                     forkIfBuiltIn()
                     var preset = audioEngine.activePreset
                     preset.bands[index].frequency = clamped
-                    preset.bands.sort { $0.frequency < $1.frequency }
                     audioEngine.activePreset = preset
-                    buildSliders()
                     markModified()
-                    return
                 }
             }
-            field.stringValue = band.frequencyLabel
+            field.stringValue = audioEngine.activePreset.bands[index].frequencyLabel
         } else if qLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text), value > 0 {
