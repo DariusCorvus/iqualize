@@ -2,7 +2,19 @@ import AppKit
 
 @available(macOS 14.2, *)
 @MainActor
-final class EQWindowController: NSWindowController {
+final class UnitTextField: NSTextField {
+    var onFocus: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { onFocus?() }
+        return result
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private let audioEngine: AudioEngine
     private let presetStore: PresetStore
 
@@ -13,8 +25,9 @@ final class EQWindowController: NSWindowController {
     private var bandCountLabel: NSTextField!
     private var slidersContainer: NSStackView!
     private var sliders: [NSSlider] = []
-    private var gainLabels: [NSTextField] = []
-    private var freqLabels: [NSTextField] = []
+    private var gainLabels: [UnitTextField] = []
+    private var freqLabels: [UnitTextField] = []
+    private var qLabels: [UnitTextField] = []
     private var clippingCheckbox: NSButton!
     private var lowLatencyCheckbox: NSButton!
     private var outputLabel: NSTextField!
@@ -192,6 +205,7 @@ final class EQWindowController: NSWindowController {
         sliders.removeAll()
         gainLabels.removeAll()
         freqLabels.removeAll()
+        qLabels.removeAll()
 
         let bands = audioEngine.activePreset.bands
 
@@ -201,10 +215,19 @@ final class EQWindowController: NSWindowController {
             column.alignment = .centerX
             column.spacing = 4
 
-            let gainLabel = NSTextField(labelWithString: band.gainLabel)
+            let gainLabel = UnitTextField(string: band.gainLabel)
             gainLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             gainLabel.alignment = .center
+            gainLabel.bezelStyle = .roundedBezel
+            gainLabel.isEditable = true
+            gainLabel.delegate = self
+            gainLabel.tag = i
             gainLabel.setContentHuggingPriority(.required, for: .vertical)
+            gainLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+            gainLabel.onFocus = { [weak self] in
+                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                gainLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].gain)
+            }
             gainLabels.append(gainLabel)
 
             let slider = NSSlider(value: Double(band.gain), minValue: -12, maxValue: 12,
@@ -217,16 +240,40 @@ final class EQWindowController: NSWindowController {
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
             sliders.append(slider)
 
-            let freqLabel = NSTextField(labelWithString: band.frequencyLabel)
+            let freqLabel = UnitTextField(string: band.frequencyLabel)
             freqLabel.font = .systemFont(ofSize: 9)
             freqLabel.alignment = .center
-            freqLabel.textColor = .secondaryLabelColor
+            freqLabel.bezelStyle = .roundedBezel
+            freqLabel.isEditable = true
+            freqLabel.delegate = self
+            freqLabel.tag = i
             freqLabel.setContentHuggingPriority(.required, for: .vertical)
+            freqLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+            freqLabel.onFocus = { [weak self] in
+                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                freqLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].frequency)
+            }
             freqLabels.append(freqLabel)
+
+            let qLabel = UnitTextField(string: band.bandwidthLabel)
+            qLabel.font = .systemFont(ofSize: 9)
+            qLabel.alignment = .center
+            qLabel.bezelStyle = .roundedBezel
+            qLabel.isEditable = true
+            qLabel.delegate = self
+            qLabel.tag = i
+            qLabel.setContentHuggingPriority(.required, for: .vertical)
+            qLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+            qLabel.onFocus = { [weak self] in
+                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                qLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].bandwidth)
+            }
+            qLabels.append(qLabel)
 
             column.addArrangedSubview(gainLabel)
             column.addArrangedSubview(slider)
             column.addArrangedSubview(freqLabel)
+            column.addArrangedSubview(qLabel)
 
             slidersContainer.addArrangedSubview(column)
         }
@@ -362,6 +409,65 @@ final class EQWindowController: NSWindowController {
         state.save()
     }
 
+    // MARK: - NSTextFieldDelegate (editable dB / Hz / Q inputs)
+
+    private static func formatRawFloat(_ v: Float) -> String {
+        v == Float(Int(v)) ? "\(Int(v))" : String(format: "%.1f", v)
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        let index = field.tag
+        guard index < audioEngine.activePreset.bands.count else { return }
+
+        let band = audioEngine.activePreset.bands[index]
+
+        if gainLabels.contains(field) {
+            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if let value = Float(text) {
+                let clamped = min(max(value, -12), 12)
+                if clamped != band.gain {
+                    forkIfBuiltIn()
+                    var preset = audioEngine.activePreset
+                    preset.bands[index].gain = clamped
+                    audioEngine.activePreset = preset
+                    sliders[index].doubleValue = Double(clamped)
+                    markModified()
+                }
+            }
+            field.stringValue = audioEngine.activePreset.bands[index].gainLabel
+        } else if freqLabels.contains(field) {
+            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if let value = Float(text) {
+                let clamped = min(max(value, 20), 20000)
+                if clamped != band.frequency {
+                    forkIfBuiltIn()
+                    var preset = audioEngine.activePreset
+                    preset.bands[index].frequency = clamped
+                    preset.bands.sort { $0.frequency < $1.frequency }
+                    audioEngine.activePreset = preset
+                    buildSliders()
+                    markModified()
+                    return
+                }
+            }
+            field.stringValue = band.frequencyLabel
+        } else if qLabels.contains(field) {
+            let text = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if let value = Float(text), value > 0 {
+                let clamped = min(max(value, 0.1), 10)
+                if clamped != band.bandwidth {
+                    forkIfBuiltIn()
+                    var preset = audioEngine.activePreset
+                    preset.bands[index].bandwidth = clamped
+                    audioEngine.activePreset = preset
+                    markModified()
+                }
+            }
+            field.stringValue = audioEngine.activePreset.bands[index].bandwidthLabel
+        }
+    }
+
     @objc private func presetChanged(_ sender: NSPopUpButton) {
         guard let uuidString = sender.selectedItem?.representedObject as? String,
               let id = UUID(uuidString: uuidString),
@@ -427,6 +533,7 @@ final class EQWindowController: NSWindowController {
     }
 
     @objc private func savePreset(_ sender: NSButton) {
+        window?.makeFirstResponder(nil)
         let alert = NSAlert()
         alert.messageText = "Save Preset"
         alert.informativeText = "Enter a name for this preset:"
@@ -468,6 +575,7 @@ final class EQWindowController: NSWindowController {
 
     @objc private func deletePreset(_ sender: NSButton) {
         guard !audioEngine.activePreset.isBuiltIn else { return }
+        window?.makeFirstResponder(nil)
 
         let alert = NSAlert()
         alert.messageText = "Delete \"\(audioEngine.activePreset.name)\"?"

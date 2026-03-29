@@ -121,11 +121,18 @@ extension EQBand {
         }
     }
 
-    var gainLabel: String {
-        if gain == 0 { return "0" }
-        if gain == Float(Int(gain)) {
-            return String(format: "%+d", Int(gain))
+    var bandwidthLabel: String {
+        if bandwidth == Float(Int(bandwidth)) {
+            return "Q \(Int(bandwidth))"
         }
-        return String(format: "%+.1f", gain)
+        return String(format: "Q %.1f", bandwidth)
+    }
+
+    var gainLabel: String {
+        if gain == 0 { return "0 dB" }
+        if gain == Float(Int(gain)) {
+            return String(format: "%+d dB", Int(gain))
+        }
+        return String(format: "%+.1f dB", gain)
     }
 }
