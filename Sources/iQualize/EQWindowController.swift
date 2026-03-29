@@ -213,6 +213,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private let presetStore: PresetStore
 
     private var eqToggle: NSButton!
+    private var undoButton: NSButton!
+    private var redoButton: NSButton!
     private var presetPicker: NSPopUpButton!
     private var slidersContainer: BandDropTarget!
     private var sliders: [NSSlider] = []
@@ -344,6 +346,35 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         gearMenu.addItem(importItem)
         importExportButton.menu = gearMenu
 
+        // Undo/Redo buttons
+        undoButton = NSButton(frame: .zero)
+        undoButton.bezelStyle = .rounded
+        undoButton.isBordered = true
+        undoButton.title = ""
+        undoButton.toolTip = "Undo"
+        undoButton.isEnabled = false
+        if let undoImage = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "Undo") {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            undoButton.image = undoImage.withSymbolConfiguration(config)
+        }
+        undoButton.target = self
+        undoButton.action = #selector(undoAction(_:))
+
+        redoButton = NSButton(frame: .zero)
+        redoButton.bezelStyle = .rounded
+        redoButton.isBordered = true
+        redoButton.title = ""
+        redoButton.toolTip = "Redo"
+        redoButton.isEnabled = false
+        if let redoImage = NSImage(systemSymbolName: "arrow.uturn.forward", accessibilityDescription: "Redo") {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            redoButton.image = redoImage.withSymbolConfiguration(config)
+        }
+        redoButton.target = self
+        redoButton.action = #selector(redoAction(_:))
+
+        presetRow.addArrangedSubview(undoButton)
+        presetRow.addArrangedSubview(redoButton)
         presetRow.addArrangedSubview(presetPicker)
         presetRow.addArrangedSubview(newButton)
         presetRow.addArrangedSubview(saveControl)
@@ -700,6 +731,55 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         resetButton.isEnabled = true
         populatePresetPicker()
         updateWindowTitle()
+        updateUndoRedoButtons()
+    }
+
+    private func updateUndoRedoButtons() {
+        let um = window?.undoManager
+        undoButton.isEnabled = um?.canUndo ?? false
+        redoButton.isEnabled = um?.canRedo ?? false
+    }
+
+    // MARK: - Undo/Redo
+
+    @objc private func undoAction(_ sender: NSButton) {
+        window?.undoManager?.undo()
+        updateUndoRedoButtons()
+    }
+
+    @objc private func redoAction(_ sender: NSButton) {
+        window?.undoManager?.redo()
+        updateUndoRedoButtons()
+    }
+
+    /// Snapshot taken at the start of a slider drag (coalesced into one undo)
+    private var sliderDragSnapshot: EQPresetData?
+
+    /// Register an undo action that restores the preset to `oldPreset`.
+    private func registerUndo(_ actionName: String, oldPreset: EQPresetData) {
+        guard let undoManager = window?.undoManager else { return }
+        let currentPreset = audioEngine.activePreset
+        undoManager.registerUndo(withTarget: self) { [weak self] target in
+            guard let self else { return }
+            let redoPreset = self.audioEngine.activePreset
+            self.audioEngine.activePreset = oldPreset
+            self.buildSliders()
+            if oldPreset == self.savedPresetSnapshot {
+                self.isModified = false
+                self.resetButton.isEnabled = false
+                self.populatePresetPicker()
+                self.updateWindowTitle()
+            } else {
+                self.markModified()
+            }
+            self.registerUndo(actionName, oldPreset: redoPreset)
+            // Defer button update until after undo manager finishes processing
+            DispatchQueue.main.async { [weak self] in
+                self?.updateUndoRedoButtons()
+            }
+        }
+        undoManager.setActionName(actionName)
+        updateUndoRedoButtons()
     }
 
     private func updateWindowTitle() {
@@ -767,6 +847,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         guard from != to,
               from < audioEngine.activePreset.bands.count,
               to <= audioEngine.activePreset.bands.count else { return }
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         let band = preset.bands.remove(at: from)
@@ -774,28 +855,33 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Reorder Band", oldPreset: oldPreset)
     }
 
     @objc private func moveBandLeft(_ sender: NSMenuItem) {
         let index = sender.tag
         guard index > 0, index < audioEngine.activePreset.bands.count else { return }
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         preset.bands.swapAt(index, index - 1)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Move Band Left", oldPreset: oldPreset)
     }
 
     @objc private func moveBandRight(_ sender: NSMenuItem) {
         let index = sender.tag
         guard index < audioEngine.activePreset.bands.count - 1 else { return }
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         preset.bands.swapAt(index, index + 1)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Move Band Right", oldPreset: oldPreset)
     }
 
     @objc private func deleteBandFromMenu(_ sender: NSMenuItem) {
@@ -813,16 +899,19 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         preset.bands.remove(at: index)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Delete Band", oldPreset: oldPreset)
     }
 
     @objc private func addBandLeft(_ sender: NSButton) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         let leftmost = preset.bands.first ?? EQBand(frequency: 100, gain: 0)
@@ -830,10 +919,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     @objc private func addBandRight(_ sender: NSButton) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
         var preset = audioEngine.activePreset
         let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
@@ -841,6 +932,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
+        registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     // MARK: - NSTextFieldDelegate (editable dB / Hz / Q inputs)
@@ -862,12 +954,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 let maxDB = audioEngine.maxGainDB
                 let clamped = min(max(value, -maxDB), maxDB)
                 if clamped != band.gain {
+                    let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
                     var preset = audioEngine.activePreset
                     preset.bands[index].gain = clamped
                     audioEngine.activePreset = preset
                     sliders[index].doubleValue = Double(clamped)
                     markModified()
+                    registerUndo("Change Gain", oldPreset: oldPreset)
                 }
             }
             field.stringValue = audioEngine.activePreset.bands[index].gainLabel
@@ -876,11 +970,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             if let value = Float(text) {
                 let clamped = min(max(value, 20), 20000)
                 if clamped != band.frequency {
+                    let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
                     var preset = audioEngine.activePreset
                     preset.bands[index].frequency = clamped
                     audioEngine.activePreset = preset
                     markModified()
+                    registerUndo("Change Frequency", oldPreset: oldPreset)
                 }
             }
             field.stringValue = audioEngine.activePreset.bands[index].frequencyLabel
@@ -889,11 +985,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             if let value = Float(text), value > 0 {
                 let clamped = min(max(value, 0.1), 10)
                 if clamped != band.bandwidth {
+                    let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
                     var preset = audioEngine.activePreset
                     preset.bands[index].bandwidth = clamped
                     audioEngine.activePreset = preset
                     markModified()
+                    registerUndo("Change Bandwidth", oldPreset: oldPreset)
                 }
             }
             field.stringValue = audioEngine.activePreset.bands[index].bandwidthLabel
@@ -917,6 +1015,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     @objc private func sliderMoved(_ sender: NSSlider) {
         let index = sender.tag
         guard index < audioEngine.activePreset.bands.count else { return }
+
+        // Snapshot at drag start for coalesced undo
+        if sliderDragSnapshot == nil {
+            sliderDragSnapshot = audioEngine.activePreset
+        }
+
         forkIfBuiltIn()
         let gain = Float(sender.doubleValue)
 
@@ -926,6 +1030,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         gainLabels[index].stringValue = preset.bands[index].gainLabel
         markModified()
+
+        // Register undo when drag ends (mouse up)
+        let event = NSApp.currentEvent
+        if event?.type == .leftMouseUp, let snapshot = sliderDragSnapshot {
+            registerUndo("Adjust Gain", oldPreset: snapshot)
+            sliderDragSnapshot = nil
+        }
     }
 
     @objc private func resetPreset(_ sender: NSButton) {
@@ -937,6 +1048,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         resetButton.isEnabled = false
         populatePresetPicker()
         updateWindowTitle()
+        window?.undoManager?.removeAllActions()
+        updateUndoRedoButtons()
     }
 
     @objc private func newPreset(_ sender: NSButton) {
