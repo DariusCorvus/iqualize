@@ -76,7 +76,7 @@ struct iQualizeMain {
     static func main() {
         if #available(macOS 14.2, *) {
             let app = NSApplication.shared
-            app.setActivationPolicy(.accessory)
+            app.setActivationPolicy(.regular)
             let delegate = AppDelegate()
             appDelegate = delegate
             app.delegate = delegate

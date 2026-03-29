@@ -228,7 +228,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var saveDropdownMenu: NSMenu!
     private var resetButton: NSButton!
     private var deleteButton: NSButton!
-    private var importExportButton: NSPopUpButton!
+    private var importExportButton: NSButton!
 
     /// Snapshot of the preset when it was loaded/saved, for reset.
     private var savedPresetSnapshot: EQPresetData?
@@ -323,18 +323,25 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         deleteButton.bezelStyle = .rounded
 
         // Import/Export gear menu
-        importExportButton = NSPopUpButton(frame: .zero, pullsDown: true)
-        importExportButton.addItem(withTitle: "")
+        importExportButton = NSButton(frame: .zero)
+        importExportButton.bezelStyle = .rounded
+        importExportButton.isBordered = true
+        importExportButton.title = ""
         if let gearImage = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "More") {
             let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-            importExportButton.item(at: 0)?.image = gearImage.withSymbolConfiguration(config)
+            importExportButton.image = gearImage.withSymbolConfiguration(config)
         }
+        importExportButton.target = self
+        importExportButton.action = #selector(showGearMenu(_:))
+
+        let gearMenu = NSMenu()
         let exportItem = NSMenuItem(title: "Export Preset…", action: #selector(exportPreset(_:)), keyEquivalent: "")
         exportItem.target = self
         let importItem = NSMenuItem(title: "Import Preset…", action: #selector(importPreset(_:)), keyEquivalent: "")
         importItem.target = self
-        importExportButton.menu?.addItem(exportItem)
-        importExportButton.menu?.addItem(importItem)
+        gearMenu.addItem(exportItem)
+        gearMenu.addItem(importItem)
+        importExportButton.menu = gearMenu
 
         presetRow.addArrangedSubview(presetPicker)
         presetRow.addArrangedSubview(newButton)
@@ -1022,11 +1029,21 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         saveState()
     }
 
-    @objc private func exportPreset(_ sender: NSMenuItem) {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(audioEngine.activePreset.name).iqpreset"
-        panel.allowedContentTypes = [.json]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    @objc private func showGearMenu(_ sender: NSButton) {
+        guard let menu = sender.menu else { return }
+        let point = NSPoint(x: 0, y: sender.bounds.height + 2)
+        menu.popUp(positioning: nil, at: point, in: sender)
+    }
+
+    @objc private func exportPreset(_ sender: Any) {
+        // Use osascript to show a native save dialog — reliable regardless of app policy
+        let name = audioEngine.activePreset.name
+        let script = """
+            set f to POSIX path of (choose file name with prompt "Export Preset" default name "\(name).iqpreset")
+            return f
+            """
+        guard let path = runAppleScript(script) else { return }
+        let url = URL(fileURLWithPath: path)
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1038,15 +1055,17 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
     }
 
-    @objc private func importPreset(_ sender: NSMenuItem) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    @objc private func importPreset(_ sender: Any) {
+        // Use osascript to show a native open dialog
+        let script = """
+            set f to POSIX path of (choose file of type {"json", "iqpreset"} with prompt "Import Preset")
+            return f
+            """
+        guard let path = runAppleScript(script) else { return }
+        let url = URL(fileURLWithPath: path)
         do {
             let data = try Data(contentsOf: url)
             var preset = try JSONDecoder().decode(EQPresetData.self, from: data)
-            // Give it a new ID to avoid collisions
             preset = EQPresetData(id: UUID(), name: preset.name, bands: preset.bands, isBuiltIn: false)
             presetStore.saveCustomPreset(preset)
             audioEngine.activePreset = preset
@@ -1055,6 +1074,24 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         } catch {
             let alert = NSAlert(error: error)
             alert.runModal()
+        }
+    }
+
+    private func runAppleScript(_ source: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            return nil
         }
     }
 
