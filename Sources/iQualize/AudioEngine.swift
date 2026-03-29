@@ -79,11 +79,7 @@ final class AudioEngine {
 
     var activePreset: EQPresetData = .flat {
         didSet {
-            if oldValue.bands.count != activePreset.bands.count {
-                if isRunning { rebuildEngine() }
-            } else {
-                applyBands()
-            }
+            applyBands(from: oldValue)
         }
     }
 
@@ -263,14 +259,18 @@ final class AudioEngine {
 
         let sourceNode = AVAudioSourceNode(format: format, renderBlock: renderCallback)
 
-        let eqNode = AVAudioUnitEQ(numberOfBands: activePreset.bands.count)
-        for (i, band) in activePreset.bands.enumerated() {
-            let eqBand = eqNode.bands[i]
-            eqBand.filterType = .parametric
-            eqBand.frequency = band.frequency
-            eqBand.bandwidth = band.bandwidth
-            eqBand.gain = band.gain
-            eqBand.bypass = false
+        let eqNode = AVAudioUnitEQ(numberOfBands: EQPresetData.maxBandCount)
+        for (i, eqBand) in eqNode.bands.enumerated() {
+            if i < activePreset.bands.count {
+                let band = activePreset.bands[i]
+                eqBand.filterType = .parametric
+                eqBand.frequency = band.frequency
+                eqBand.bandwidth = band.bandwidth
+                eqBand.gain = band.gain
+                eqBand.bypass = false
+            } else {
+                eqBand.bypass = true
+            }
         }
         eqNode.globalGain = preventClipping ? activePreset.preampGain : 0
         eqNode.bypass = activePreset.isFlat
@@ -358,13 +358,40 @@ final class AudioEngine {
         }
     }
 
-    private func applyBands() {
+    private func applyBands(from old: EQPresetData? = nil) {
         guard let eq else { return }
+        let newCount = activePreset.bands.count
+        let oldCount = old?.bands.count ?? 0
+
         for (i, band) in activePreset.bands.enumerated() {
-            eq.bands[i].frequency = band.frequency
-            eq.bands[i].gain = band.gain
-            eq.bands[i].bandwidth = band.bandwidth
+            let eqBand = eq.bands[i]
+            if i >= oldCount {
+                // New band — configure fully
+                eqBand.filterType = .parametric
+                eqBand.frequency = band.frequency
+                eqBand.bandwidth = band.bandwidth
+                eqBand.gain = band.gain
+                eqBand.bypass = false
+            } else if let oldBand = old?.bands[i] {
+                // Existing band — only update changed params
+                if band.frequency != oldBand.frequency { eqBand.frequency = band.frequency }
+                if band.gain != oldBand.gain { eqBand.gain = band.gain }
+                if band.bandwidth != oldBand.bandwidth { eqBand.bandwidth = band.bandwidth }
+            } else {
+                // No old data — write everything
+                eqBand.frequency = band.frequency
+                eqBand.gain = band.gain
+                eqBand.bandwidth = band.bandwidth
+            }
         }
+
+        // Bypass bands that are no longer active
+        if newCount < oldCount {
+            for i in newCount..<oldCount {
+                eq.bands[i].bypass = true
+            }
+        }
+
         eq.globalGain = preventClipping ? activePreset.preampGain : 0
         eq.bypass = activePreset.isFlat
     }
