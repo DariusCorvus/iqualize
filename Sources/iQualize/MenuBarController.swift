@@ -186,7 +186,8 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     @objc private func showAbout(_ sender: NSMenuItem) {
         let alert = NSAlert()
         alert.messageText = "iQualize"
-        alert.informativeText = "System-wide audio equalizer for macOS.\nVersion 0.2"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        alert.informativeText = "System-wide audio equalizer for macOS.\nVersion \(version)"
         alert.alertStyle = .informational
         alert.runModal()
     }
