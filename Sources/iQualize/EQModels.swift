@@ -10,6 +10,7 @@ enum FilterType: String, Codable, CaseIterable, Equatable, Sendable {
     case lowPass
     case highPass
     case bandPass
+    case notch
 
     var displayName: String {
         switch self {
@@ -19,6 +20,7 @@ enum FilterType: String, Codable, CaseIterable, Equatable, Sendable {
         case .lowPass:    return "Lo Pass"
         case .highPass:   return "Hi Pass"
         case .bandPass:   return "Band Pass"
+        case .notch:      return "Notch"
         }
     }
 
@@ -30,6 +32,7 @@ enum FilterType: String, Codable, CaseIterable, Equatable, Sendable {
         case .lowPass:    return .lowPass
         case .highPass:   return .highPass
         case .bandPass:   return .bandPass
+        case .notch:      return .bandStop
         }
     }
 }

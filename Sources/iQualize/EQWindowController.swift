@@ -37,6 +37,26 @@ final class FrequencyResponseView: NSView {
     /// When true, draws with transparent background (for use as slider backdrop).
     var isBackdrop = false
 
+    /// Reference slider used to align the curve's gain axis with the slider track.
+    weak var referenceSlider: NSSlider?
+    /// Cached slider track Y range in our coordinate system (updated on layout).
+    private var trackMinY: CGFloat = 0
+    private var trackMaxY: CGFloat = 0
+
+    override func layout() {
+        super.layout()
+        guard isBackdrop, let slider = referenceSlider else { return }
+        // Convert slider bounds to our coordinate system
+        let sliderOrigin = slider.convert(CGPoint.zero, to: self)
+        let sliderTop = slider.convert(CGPoint(x: 0, y: slider.bounds.height), to: self)
+        let knobInset = slider.knobThickness / 2.0
+        // Slider value increases bottom-to-top; in our coords, bottom = lower Y
+        let bottom = min(sliderOrigin.y, sliderTop.y)
+        let top = max(sliderOrigin.y, sliderTop.y)
+        trackMinY = bottom + knobInset
+        trackMaxY = top - knobInset
+    }
+
     func updateBands(_ bands: [EQBand], maxGainDB: Float) {
         self.bands = bands
         self.maxGainDB = maxGainDB
@@ -55,42 +75,46 @@ final class FrequencyResponseView: NSView {
 
     /// Per-band gain contribution using filter-type-appropriate response curves.
     private func bandGain(for band: EQBand, at freq: Float) -> Float {
-        let u = freq / band.frequency  // normalized frequency ratio
+        let octaves = log2(freq / band.frequency)
 
         switch band.filterType {
         case .parametric:
-            let octaves = log2(u)
+            // Bell — gaussian peak/dip centered on frequency
             let sigma = band.bandwidth / 2.0
             return band.gain * exp(-0.5 * (octaves / sigma) * (octaves / sigma))
 
         case .lowShelf:
-            let octaves = log2(u)
+            // Sigmoid that boosts/cuts everything below frequency
             let slope = 4.0 / max(band.bandwidth, 0.1)
             return band.gain * 0.5 * (1.0 - tanh(slope * octaves))
 
         case .highShelf:
-            let octaves = log2(u)
+            // Sigmoid that boosts/cuts everything above frequency
             let slope = 4.0 / max(band.bandwidth, 0.1)
             return band.gain * 0.5 * (1.0 + tanh(slope * octaves))
 
         case .lowPass:
-            let Q = 1.0 / (2.0 * sinh(log(2.0) / 2.0 * max(band.bandwidth, 0.1)))
-            let u2 = u * u
-            let denom = (1.0 - u2) * (1.0 - u2) + (u / Q) * (u / Q)
-            return -10.0 * log10(max(denom, 1e-10))
+            // Flat below cutoff, rolls off above — slope scales with Q
+            let slope = 2.0 / max(band.bandwidth, 0.1)
+            let rolloff = max(octaves, 0) * slope
+            return -rolloff * 6.0  // ~6 dB/oct per unit slope
 
         case .highPass:
-            let Q = 1.0 / (2.0 * sinh(log(2.0) / 2.0 * max(band.bandwidth, 0.1)))
-            let u2 = u * u
-            let denom = (1.0 - u2) * (1.0 - u2) + (u / Q) * (u / Q)
-            return 10.0 * log10(max(u2 * u2, 1e-10)) - 10.0 * log10(max(denom, 1e-10))
+            // Rolls off below cutoff, flat above
+            let slope = 2.0 / max(band.bandwidth, 0.1)
+            let rolloff = max(-octaves, 0) * slope
+            return -rolloff * 6.0
 
         case .bandPass:
-            let Q = 1.0 / (2.0 * sinh(log(2.0) / 2.0 * max(band.bandwidth, 0.1)))
-            let u2 = u * u
-            let uOverQ = u / Q
-            let denom = (1.0 - u2) * (1.0 - u2) + uOverQ * uOverQ
-            return 10.0 * log10(max(uOverQ * uOverQ, 1e-10)) - 10.0 * log10(max(denom, 1e-10))
+            // Kills everything outside the band — inverted gaussian
+            let sigma = band.bandwidth / 2.0
+            let atten = 1.0 - exp(-0.5 * (octaves / sigma) * (octaves / sigma))
+            return -atten * maxGainDB
+
+        case .notch:
+            // Narrow surgical dip — tight gaussian, Q×4
+            let sigma = band.bandwidth / 8.0  // 4× tighter than bell
+            return -maxGainDB * exp(-0.5 * (octaves / sigma) * (octaves / sigma))
         }
     }
 
@@ -106,7 +130,17 @@ final class FrequencyResponseView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let b = bounds
         let inset: CGFloat = isBackdrop ? 0 : 4
-        let plotRect = b.insetBy(dx: inset, dy: inset)
+        var plotRect = b.insetBy(dx: inset, dy: inset)
+
+        // In backdrop mode, align the gain axis to the slider track area
+        if isBackdrop, trackMaxY > trackMinY {
+            plotRect = CGRect(
+                x: plotRect.minX,
+                y: trackMinY,
+                width: plotRect.width,
+                height: trackMaxY - trackMinY
+            )
+        }
 
         if !isBackdrop {
             // Standalone mode: draw own background
@@ -974,6 +1008,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             window.setFrame(frame, display: true, animate: true)
         }
 
+        curveView.referenceSlider = sliders.first
         updateCurveView()
     }
 
