@@ -42,6 +42,23 @@ open /Applications/iQualize.app
 - Binary is codesigned with "Apple Development" cert to preserve TCC permissions across rebuilds
 - install.sh skips binary copy if unchanged (preserves cdhash)
 
+### Launch verification (REQUIRED)
+
+After every build+install, you MUST verify the app actually launches:
+
+```bash
+pkill -x iQualize; bash install.sh && open /Applications/iQualize.app
+sleep 2
+pgrep -x iQualize > /dev/null && echo "OK: app running" || echo "FAIL: app did not start"
+```
+
+If the app fails to launch ("can't be opened" error), debug and fix before proceeding. Common causes:
+- **TCC/cdhash mismatch**: the codesign identity changed or install.sh didn't re-sign properly
+- **Launchd spawn failure**: macOS sometimes needs a few seconds after killing the old process — add `sleep 1` before `open`
+- **Crash on startup**: run the binary directly to see the error: `/Applications/iQualize.app/Contents/MacOS/iQualize`
+
+**A task is not done until the app launches successfully.** Never skip this step.
+
 ## Architecture
 
 - `Sources/iQualize/iQualizeApp.swift` — app entry, NSApplicationDelegate

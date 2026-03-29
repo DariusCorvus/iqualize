@@ -1,10 +1,18 @@
 # iQualize
 
-System-wide audio equalizer for macOS. A native Swift menu bar app that captures all system audio via Core Audio Taps, applies parametric EQ processing, and plays it back through your output device — no kernel extensions, no virtual audio drivers.
+System-wide parametric equalizer for macOS. Native Swift menu bar app that captures all system audio via Core Audio Taps, applies real-time EQ processing, and routes it to your output device — no kernel extensions, no virtual audio drivers, no background daemons.
 
 ```
 System Audio → CATap (muted) → IOProc → Ring Buffer → AVAudioSourceNode → EQ → Output Device
 ```
+
+Built for people who care about how their Mac sounds.
+
+## Why iQualize
+
+macOS has no system-wide EQ. If your headphones are bass-heavy, your speakers are muddy in a corner, or you just want more kick in your techno — you're stuck. iQualize fixes that with a parametric EQ that sits between every app on your system and your output device.
+
+No virtual audio device tricks. No kernel extension nightmares after macOS updates. Core Audio Taps (macOS 14.2+) is the proper API for this, and iQualize uses it.
 
 ## Requirements
 
@@ -20,52 +28,152 @@ open /Applications/iQualize.app
 
 ## Features
 
-### Equalizer
-- Up to 31 parametric EQ bands with editable frequency (20 Hz–20 kHz), gain, and Q/bandwidth
+### Parametric EQ
+
+- Up to 31 bands with editable frequency (20 Hz – 20 kHz), gain, and Q/bandwidth
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
-- Anti-clipping preamp that automatically reduces gain to prevent digital clipping
+- Anti-clipping preamp — automatically reduces gain to prevent digital clipping
 - Low Latency mode (50ms buffer) for real-time monitoring
 - Smooth, glitch-free parameter updates — only changed values are written to the audio unit
 
 ### Band Management
-- Add bands with + buttons on either side of the EQ
-- Smart frequency suggestions — new bands fill the largest spectral gap
+
+- Add bands with + buttons on either side of the EQ — new band copies the leftmost or rightmost band
 - Delete, reorder via drag-and-drop or right-click context menu (Move Left/Right)
 - Minimum 1 band, maximum 31
 
 ### Presets
-- Built-in presets: Flat, Bass Boost, Vocal Clarity
+
+- Built-in presets: Flat, Bass Boost, Vocal Clarity, Loudness, Treble Boost, Podcast, Techno, Deep House, Hard Techno, Minimal
 - Create, rename, overwrite, and delete custom presets
-- Built-in presets auto-fork when edited
+- Built-in presets auto-fork when edited (non-destructive)
 - Unsaved changes indicator (asterisk in title)
 - Import/export as `.iqpreset` JSON files with batch import and overwrite protection
 - Quick switching from the menu bar or EQ window picker
 
+#### Preset Format
+
+Presets are `.iqpreset` files — plain JSON:
+
+```json
+{
+  "bands": [
+    { "bandwidth": 1.0, "frequency": 80, "gain": 5 },
+    { "bandwidth": 1.2, "frequency": 200, "gain": -3 }
+  ],
+  "id": "CDE9BB8A-12A5-420C-9619-2790E20030D5",
+  "isBuiltIn": false,
+  "name": "My Preset"
+}
+```
+
+Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — lower is wider, higher is narrower).
+
 ### Undo/Redo
+
 - Full undo/redo for all EQ modifications (gain, frequency, bandwidth, reorder, add, delete)
 - Slider drags coalesced into single undo actions
 - Cmd+Z / Cmd+Shift+Z
 
 ### Menu Bar
+
 - Quick preset selection with checkmarks
+- Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Prevent Clipping and Low Latency toggles
 - Current output device display
 - Open EQ window (Cmd+,)
 
 ### System Integration
+
 - Automatic output device switching and reconnection
 - Sleep/wake handling — pauses on sleep, resumes on wake
 - Window state and all settings persist across launches
 - Codesigned for stable TCC permissions across rebuilds
 - Built with Swift Package Manager — no Xcode project needed
 
+## Architecture
+
+iQualize uses Core Audio Taps (CATap), introduced in macOS 14.2, to intercept system audio without a virtual audio device. Virtual devices (like BlackHole or eqMac's driver approach) create a secondary audio path — you lose system volume control, break some DRM-protected audio, and add latency. CATap captures the audio stream directly from the HAL, processes it in-process, and sends it to the output device.
+
+```
+┌─────────────────────────────────────────────────┐
+│  macOS Audio Server                             │
+│                                                 │
+│  App Audio ──┬── Output Device (muted by tap)   │
+│              │                                  │
+│              └── CATap ──► iQualize IOProc      │
+│                            │                    │
+│                            ▼                    │
+│                       Ring Buffer               │
+│                            │                    │
+│                            ▼                    │
+│                   AVAudioSourceNode             │
+│                            │                    │
+│                            ▼                    │
+│                    AVAudioUnitEQ                 │
+│                    (parametric EQ)               │
+│                            │                    │
+│                            ▼                    │
+│                    Output Device                 │
+└─────────────────────────────────────────────────┘
+```
+
+The ring buffer decouples the real-time IOProc callback from AVAudioEngine's pull model. Parameter changes are written atomically — no locks in the audio thread, no glitches on slider drags.
+
+## Output Handling
+
+iQualize detects the output device's sample rate and converts internally so the audio plays back correctly regardless of what device you're on. Bluetooth sends stereo (2ch) only — SBC, AAC, and aptX all max out at 2 channels. If your speaker system supports 5.1 (e.g. Teufel Concept E via USB), the hardware handles channel routing and upmixing (Dolby Pro Logic II etc) on its end.
+
 ## Roadmap
 
-- [ ] Visual frequency response curve
-- [ ] Per-app audio routing (EQ only specific apps)
-- [ ] More built-in presets (Loudness, Treble Boost, Podcast, etc.)
-- [ ] Preset sharing / community presets
-- [ ] Audio spectrum analyzer / visualizer
-- [ ] Keyboard shortcuts for band adjustments
-- [ ] Sparkle auto-updates
-- [ ] Menu bar waveform or level meter
+Prioritized by impact vs effort. Score = impact (1-5) x ease (1-5). Higher = do first.
+
+### Low-hanging fruit (score 15+)
+
+| Feature | Impact | Ease | Score | Notes |
+|---|---|---|---|---|
+| Smart frequency suggestions | 3 | 5 | 15 | New bands fill the largest spectral gap instead of copying the edge band |
+| Keyboard shortcuts for bands | 3 | 5 | 15 | Arrow keys to adjust selected band gain/freq |
+| Visual frequency response curve | 5 | 3 | 15 | Draw the composite EQ curve in the window — biggest UX upgrade |
+
+### High impact, moderate effort (score 10-14)
+
+| Feature | Impact | Ease | Score | Notes |
+|---|---|---|---|---|
+| Filter types per band | 5 | 3 | 15 | Bell, low/high shelf, low/high pass, notch, bandpass — AVAudioUnitEQ already supports these filter types natively |
+| Per-band bypass | 4 | 3 | 12 | Set individual band gain to 0 without losing saved value, toggle in UI |
+| Drag-on-curve editing | 5 | 2 | 10 | Drag band nodes directly on the response curve — needs hit testing, coordinate mapping |
+| Real-time spectrum analyzer | 5 | 2 | 10 | FFT of audio buffer, render behind EQ curve. Pre/post EQ modes. Huge visual feature |
+| Peak hold markers | 3 | 4 | 12 | Piggybacks on the analyzer — small addition once FFT exists |
+| Filter slope selection | 3 | 4 | 12 | 6/12/24/48 dB/oct for pass filters — expose existing Core Audio param |
+| Per-band solo | 3 | 3 | 9 | Mute all other bands, play only the selected band's affected range |
+| Menu bar level meter | 3 | 3 | 9 | RMS/peak meter from the output buffer, render in menu bar icon |
+| Sparkle auto-updates | 3 | 3 | 9 | Standard for Mac apps, one-time setup |
+
+### Differentiators (score 5-9, higher effort but competitive moat)
+
+| Feature | Impact | Ease | Score | Notes |
+|---|---|---|---|---|
+| Per-app volume mixer | 5 | 2 | 10 | Independent volume per app. Requires per-process audio taps — significant Core Audio work |
+| Per-app EQ routing | 5 | 1 | 5 | Different EQ per app. Same tap challenge as above but with per-stream EQ instances |
+| AutoEQ headphone profiles | 5 | 2 | 10 | Import from the open-source AutoEQ database. Match headphone model, apply corrective curve |
+| Preset sharing / community | 4 | 2 | 8 | Web directory or GitHub repo of .iqpreset files, in-app browse and import |
+| Mid/Side processing | 4 | 2 | 8 | Encode L/R to Mid/Side, EQ independently, decode back. Matrix math in the audio buffer |
+| L/R independent EQ | 3 | 3 | 9 | Separate curves per channel — simpler than Mid/Side, just duplicate the EQ chain |
+| Shortcuts integration | 3 | 3 | 9 | macOS Shortcuts actions for preset switching, bypass toggle — good for automation |
+
+### Moonshots (high effort, high reward)
+
+| Feature | Impact | Ease | Score | Notes |
+|---|---|---|---|---|
+| Audiogram hearing compensation | 5 | 1 | 5 | Built-in hearing test (play tones, user marks threshold), generate corrective L/R curve. Nobody does this well on macOS — huge accessibility angle, press-worthy |
+| Room correction via mic | 5 | 1 | 5 | Play test tones through speakers, record with Mac mic, compute room response, generate inverse EQ. Pro studio feature at consumer level |
+| AU plugin hosting | 5 | 1 | 5 | Load third-party Audio Unit effects into the signal chain. Opens the entire AU plugin ecosystem |
+| Dynamic EQ | 4 | 1 | 4 | Bands activate based on signal threshold — compressor married to EQ. Requires sidechain analysis per band |
+| Linear phase mode | 3 | 1 | 3 | FIR filter implementation, preserves phase coherence. High latency, mastering use case |
+| Auto-gain compensation | 3 | 2 | 6 | Maintain perceived loudness while EQ changes. Integrate over frequency-weighted gain |
+| Multichannel-aware EQ | 4 | 1 | 4 | Per-channel or per-group curves for 5.1/7.1 setups. Needs channel routing UI |
+
+## License
+
+[TODO]
