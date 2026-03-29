@@ -181,9 +181,28 @@ extension EQPresetData {
         isBuiltIn: true
     )
 
+    static let americanRap = EQPresetData(
+        id: UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!,
+        name: "American Rap",
+        //                                        32  64 125 250 500  1k  2k  4k  8k 16k
+        bands: zip(defaultFrequencies, [Float]([10,  8,  4,  0, -2, -2,  2,  4,  6,  4]))
+            .map { EQBand(frequency: $0.0, gain: $0.1) },
+        isBuiltIn: true
+    )
+
+    static let germanRap = EQPresetData(
+        id: UUID(uuidString: "00000000-0000-0000-0000-00000000000C")!,
+        name: "German Rap",
+        //                                        32  64 125 250 500  1k  2k  4k  8k 16k
+        bands: zip(defaultFrequencies, [Float]([ 6,  8,  6,  2, -2,  0,  4,  4,  2,  2]))
+            .map { EQBand(frequency: $0.0, gain: $0.1) },
+        isBuiltIn: true
+    )
+
     static let builtInPresets: [EQPresetData] = [
         .flat, .bassBoost, .vocalClarity, .loudness, .trebleBoost,
-        .podcast, .techno, .deepHouse, .hardTechno, .minimal
+        .podcast, .techno, .deepHouse, .hardTechno, .minimal,
+        .americanRap, .germanRap
     ]
 
     /// Suggest a frequency for a new band inserted into the current set.

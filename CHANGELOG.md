@@ -2,6 +2,12 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.11.0] - 2026-03-30
+
+### Added
+- American Rap built-in preset (808-heavy sub-bass, mid scoop, vocal presence)
+- German Rap built-in preset (warm mid-bass, vocal clarity, balanced brightness)
+
 ## [0.10.0] - 2026-03-30
 
 ### Added
