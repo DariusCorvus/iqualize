@@ -316,6 +316,7 @@ final class BandDropTarget: NSStackView {
         rightHoverButton?.removeFromSuperview()
         leftHoverButton = nil
         rightHoverButton = nil
+        if let old = hoverTrackingArea { removeTrackingArea(old); hoverTrackingArea = nil }
 
         guard canAdd else { return }
 
@@ -437,6 +438,7 @@ final class BandDropTarget: NSStackView {
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        isDragging = false
         indicator.isHidden = true
         guard let dropIdx = dropIndex,
               let str = sender.draggingPasteboard.string(forType: .string),
@@ -456,6 +458,16 @@ final class BandDropTarget: NSStackView {
         isDragging = false
         indicator.isHidden = true
         dropIndex = nil
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Allow clicks on hover buttons positioned outside our bounds
+        for btn in [leftHoverButton, rightHoverButton] {
+            guard let btn, btn.alphaValue > 0 else { continue }
+            let btnPoint = btn.convert(point, from: superview)
+            if btn.bounds.contains(btnPoint) { return btn }
+        }
+        return super.hitTest(point)
     }
 }
 
