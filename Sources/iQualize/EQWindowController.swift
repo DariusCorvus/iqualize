@@ -177,7 +177,7 @@ final class FrequencyResponseView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let b = bounds
-        let labelMargin: CGFloat = isBackdrop ? 16 : 0
+        let labelMargin: CGFloat = isBackdrop ? 28 : 0
         let inset: CGFloat = isBackdrop ? 0 : 4
         var plotRect = b.insetBy(dx: inset + labelMargin, dy: inset)
 
@@ -1008,8 +1008,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bandsWrapper.addSubview(slidersContainer)
 
         // Pin curve to fill the wrapper
-        curveView.leadingAnchor.constraint(equalTo: bandsWrapper.leadingAnchor, constant: -16).isActive = true
-        curveView.trailingAnchor.constraint(equalTo: bandsWrapper.trailingAnchor, constant: 16).isActive = true
+        curveView.leadingAnchor.constraint(equalTo: bandsWrapper.leadingAnchor, constant: -28).isActive = true
+        curveView.trailingAnchor.constraint(equalTo: bandsWrapper.trailingAnchor, constant: 28).isActive = true
         curveView.topAnchor.constraint(equalTo: bandsWrapper.topAnchor).isActive = true
         curveView.bottomAnchor.constraint(equalTo: bandsWrapper.bottomAnchor).isActive = true
 
@@ -1020,8 +1020,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         slidersContainer.bottomAnchor.constraint(equalTo: bandsWrapper.bottomAnchor).isActive = true
 
         mainStack.addArrangedSubview(bandsWrapper)
-        bandsWrapper.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 16).isActive = true
-        bandsWrapper.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -16).isActive = true
+        bandsWrapper.leadingAnchor.constraint(greaterThanOrEqualTo: mainStack.leadingAnchor, constant: 28).isActive = true
+        bandsWrapper.trailingAnchor.constraint(lessThanOrEqualTo: mainStack.trailingAnchor, constant: -28).isActive = true
 
         // Divider below bands
         let bottomDivider = NSBox()
