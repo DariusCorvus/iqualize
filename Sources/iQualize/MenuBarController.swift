@@ -99,6 +99,14 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         clippingItem.state = audioEngine.peakLimiter ? .on : .off
         menu.addItem(clippingItem)
 
+        // Hide from Dock toggle
+        let dockItem = NSMenuItem(title: "Hide from Dock",
+                                   action: #selector(toggleHideFromDock(_:)), keyEquivalent: "")
+        dockItem.target = self
+        dockItem.state = state.hideFromDock ? .on : .off
+        menu.addItem(dockItem)
+
+
         menu.addItem(.separator())
 
         // Open standalone window
@@ -183,6 +191,15 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         audioEngine.peakLimiter.toggle()
         state.peakLimiter = audioEngine.peakLimiter
         state.save()
+    }
+
+    @objc private func toggleHideFromDock(_ sender: NSMenuItem) {
+        state.hideFromDock.toggle()
+        state.save()
+        NSApp.setActivationPolicy(state.hideFromDock ? .accessory : .regular)
+        if !state.hideFromDock {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {

@@ -10,6 +10,7 @@ struct iQualizeState: Codable {
     var maxGainDB: Float
     var bypassed: Bool
     var autoScale: Bool
+    var hideFromDock: Bool
 
     static let defaultState = iQualizeState(
         isEnabled: false,
@@ -18,10 +19,34 @@ struct iQualizeState: Codable {
         windowOpen: false,
         maxGainDB: 12,
         bypassed: false,
-        autoScale: true
+        autoScale: true,
+        hideFromDock: false
     )
 
     private static let key = "com.iqualize.state"
+
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, hideFromDock: Bool = false) {
+        self.isEnabled = isEnabled
+        self.selectedPresetID = selectedPresetID
+        self.peakLimiter = peakLimiter
+        self.windowOpen = windowOpen
+        self.maxGainDB = maxGainDB
+        self.bypassed = bypassed
+        self.autoScale = autoScale
+        self.hideFromDock = hideFromDock
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = (try? container.decode(Bool.self, forKey: .isEnabled)) ?? false
+        selectedPresetID = (try? container.decode(UUID.self, forKey: .selectedPresetID)) ?? EQPresetData.flat.id
+        peakLimiter = (try? container.decode(Bool.self, forKey: .peakLimiter)) ?? true
+        windowOpen = (try? container.decode(Bool.self, forKey: .windowOpen)) ?? false
+        maxGainDB = (try? container.decode(Float.self, forKey: .maxGainDB)) ?? 12
+        bypassed = (try? container.decode(Bool.self, forKey: .bypassed)) ?? false
+        autoScale = (try? container.decode(Bool.self, forKey: .autoScale)) ?? true
+        hideFromDock = (try? container.decode(Bool.self, forKey: .hideFromDock)) ?? false
+    }
 
     static func load() -> iQualizeState {
         guard let data = UserDefaults.standard.data(forKey: key),

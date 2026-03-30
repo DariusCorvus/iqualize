@@ -9,9 +9,9 @@ swift build -c release 2>&1 | tail -5
 
 APP=/Applications/iQualize.app
 BIN="$APP/Contents/MacOS/iQualize"
-SRC=.build/release/iQualize
+SRC="$(swift build -c release --show-bin-path)/iQualize"
 
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # Only replace binary if it actually changed — preserves TCC permissions (cdhash stays the same)
 if [ -f "$BIN" ] && cmp -s "$SRC" "$BIN"; then
@@ -25,6 +25,9 @@ else
     fi
     echo "Binary updated"
 fi
+
+# Copy app icon
+cp -f Sources/iQualize/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Always update Info.plist — then re-sign if it changed (plist change invalidates signature)
 if ! cmp -s Sources/iQualize/Info.plist "$APP/Contents/Info.plist"; then
