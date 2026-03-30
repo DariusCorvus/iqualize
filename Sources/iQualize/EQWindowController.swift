@@ -97,13 +97,12 @@ final class FrequencyResponseView: NSView {
         let peakDb = compositeGains.max() ?? 0
         let valleyDb = compositeGains.min() ?? 0
 
-        // Symmetric around 0 dB so the zero line stays centered and
-        // matches the physical slider knob positions.
-        var extreme = max(abs(peakDb), abs(valleyDb))
-        if extreme < 1.0 { extreme = 1.0 }
+        // Asymmetric: scale top and bottom independently for tight fit.
+        // Zero stays at center — gainToY uses split scaling above/below zero.
+        var displayMax = ceil(max(abs(peakDb), 1.0) * 1.2)
+        var displayMin = -ceil(max(abs(valleyDb), 1.0) * 1.2)
 
-        let displayMax = ceil(extreme * 1.2)
-        return (min: -displayMax, max: displayMax)
+        return (min: displayMin, max: displayMax)
     }
 
     private func startAnimationIfNeeded() {
@@ -175,10 +174,16 @@ final class FrequencyResponseView: NSView {
     }
 
     private func gainToY(_ gain: Float, height: CGFloat) -> CGFloat {
-        let range = currentDisplayMax - currentDisplayMin
-        guard range > 0 else { return height / 2.0 }
-        let norm = (Double(gain) - currentDisplayMin) / range
-        return CGFloat(norm) * height
+        let mid = height / 2.0
+        if gain >= 0 {
+            // Top half: 0 dB at center, +displayMax at top
+            guard currentDisplayMax > 0 else { return mid }
+            return mid + CGFloat(Double(gain) / currentDisplayMax) * mid
+        } else {
+            // Bottom half: 0 dB at center, displayMin (negative) at bottom
+            guard currentDisplayMin < 0 else { return mid }
+            return mid + CGFloat(Double(gain) / -currentDisplayMin) * mid
+        }
     }
 
     private func clampToDisplayRange(_ gain: Float) -> Float {
