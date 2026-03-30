@@ -1483,6 +1483,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 addRight.tag = -(i + 1) // negative tag encodes "insert after index i"
                 menu.addItem(addRight)
 
+                let addSuggested = NSMenuItem(title: "Add Suggested Band", action: #selector(addSuggestedBand(_:)), keyEquivalent: "")
+                addSuggested.target = self
+                menu.addItem(addSuggested)
+
                 menu.addItem(.separator())
             }
 
@@ -2005,6 +2009,21 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         var preset = audioEngine.activePreset
         let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
         preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth, filterType: rightmost.filterType))
+        audioEngine.activePreset = preset
+        buildSliders()
+        markModified()
+        registerUndo("Add Band", oldPreset: oldPreset)
+    }
+
+    @objc private func addSuggestedBand(_ sender: NSMenuItem) {
+        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        let oldPreset = audioEngine.activePreset
+        forkIfBuiltIn()
+        var preset = audioEngine.activePreset
+        let freq = preset.suggestNewBandFrequency()
+        let newBand = EQBand(frequency: freq, gain: 0, bandwidth: 1.0)
+        let insertIndex = preset.bands.firstIndex(where: { $0.frequency > freq }) ?? preset.bands.count
+        preset.bands.insert(newBand, at: insertIndex)
         audioEngine.activePreset = preset
         buildSliders()
         markModified()
