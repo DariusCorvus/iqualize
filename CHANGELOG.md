@@ -2,6 +2,17 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.16.0] - 2026-03-30
+
+### Added
+- Dual real-time spectrum analyzer with pre-EQ (raw input) and post-EQ (processed output) visualization
+- Independent toggle checkboxes for pre-EQ and post-EQ spectrum display
+- Smooth Catmull-Rom spline rendering for spectrum curves with peak hold lines
+- Lock-free double-buffered audio-to-UI data transfer using ARM64 natural atomicity
+- 2048-point FFT via Accelerate vDSP with Hann windowing and log-frequency binning
+- Asymmetric smoothing: instant attack, exponential decay (factor 0.85) for responsive yet smooth visuals
+- Spectrum toggle states persist across app restarts
+
 ## [0.15.1] - 2026-03-30
 
 ### Removed

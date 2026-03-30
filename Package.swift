@@ -15,6 +15,7 @@ let package = Package(
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("AVFAudio"),
                 .linkedFramework("AppKit"),
+                .linkedFramework("Accelerate"),
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",

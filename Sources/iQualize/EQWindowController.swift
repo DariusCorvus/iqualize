@@ -73,6 +73,27 @@ final class FrequencyResponseView: NSView {
     private var sampleRate: Double = 48000
     private var autoScale: Bool = true
 
+    // Spectrum analyzer data sources
+    var preEqSpectrumData: SpectrumData?
+    var postEqSpectrumData: SpectrumData?
+    var preEqSpectrumEnabled = false
+    var postEqSpectrumEnabled = false
+
+    // Spectrum read buffers (reused across frames to avoid allocation)
+    // nonisolated(unsafe) needed because UnsafeMutablePointer is not Sendable
+    // and deinit is nonisolated; these are only accessed from the main thread.
+    nonisolated(unsafe) private var specMagnitudes = UnsafeMutablePointer<Float>.allocate(capacity: SpectrumData.binCount)
+    nonisolated(unsafe) private var specPeaks = UnsafeMutablePointer<Float>.allocate(capacity: SpectrumData.binCount)
+
+    // Pre-computed log-spaced bin edge frequencies for spectrum rendering
+    private let specBinEdges: [Float] = {
+        let count = SpectrumData.binCount
+        return (0...count).map { i in
+            let t = Float(i) / Float(count)
+            return 20.0 * powf(1000.0, t)
+        }
+    }()
+
     // Animation state
     private var currentDisplayMax: Double = 12.0
     private var currentDisplayMin: Double = -12.0
@@ -126,6 +147,8 @@ final class FrequencyResponseView: NSView {
     deinit {
         animationTimer?.cancel()
         animationTimer = nil
+        specMagnitudes.deallocate()
+        specPeaks.deallocate()
     }
 
     // MARK: - Auto-scale
@@ -145,7 +168,7 @@ final class FrequencyResponseView: NSView {
         return (min: displayMin, max: displayMax)
     }
 
-    private func startAnimationIfNeeded() {
+    func startAnimationIfNeeded() {
         guard animationTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now(), repeating: .milliseconds(16))
@@ -202,7 +225,9 @@ final class FrequencyResponseView: NSView {
             onDisplayGainsChanged?(displayGains)
         }
 
-        if converged {
+        // Keep animating while spectrum is active (needs continuous redraws)
+        let spectrumActive = preEqSpectrumEnabled || postEqSpectrumEnabled
+        if converged && !spectrumActive {
             stopAnimation()
         }
         needsDisplay = true
@@ -224,6 +249,122 @@ final class FrequencyResponseView: NSView {
 
     private func clampToDisplayRange(_ gain: Float) -> Float {
         min(max(gain, Float(currentDisplayMin)), Float(currentDisplayMax))
+    }
+
+    // MARK: - Spectrum drawing
+
+    /// Builds an array of (x, y) points for the spectrum curve, using Catmull-Rom
+    /// spline interpolation for smoothness.
+    private func spectrumPoints(
+        _ magnitudes: UnsafeMutablePointer<Float>,
+        in plotRect: CGRect
+    ) -> [CGPoint] {
+        let binCount = SpectrumData.binCount
+        let dbFloor: Float = -80.0
+        let dbCeiling: Float = 0.0
+        let dbRange = dbCeiling - dbFloor
+
+        var points = [CGPoint]()
+        points.reserveCapacity(binCount)
+        for i in 0..<binCount {
+            let centerFreq = sqrtf(specBinEdges[i] * specBinEdges[i + 1])
+            let x = freqToX(centerFreq, width: plotRect.width) + plotRect.minX
+            let clamped = min(max(magnitudes[i], dbFloor), dbCeiling)
+            let norm = CGFloat((clamped - dbFloor) / dbRange)
+            let y = plotRect.minY + norm * plotRect.height
+            points.append(CGPoint(x: x, y: y))
+        }
+        return points
+    }
+
+    /// Adds a Catmull-Rom spline through the given points to the context path.
+    /// Does NOT move to the first point — caller must position the current point
+    /// (or call move(to:) before this) to keep fill paths contiguous.
+    private func addCatmullRomSpline(_ points: [CGPoint], to ctx: CGContext, moveToStart: Bool = false) {
+        guard points.count >= 2 else { return }
+
+        if moveToStart {
+            ctx.move(to: points[0])
+        }
+
+        if points.count == 2 {
+            ctx.addLine(to: points[1])
+            return
+        }
+
+        for i in 0..<points.count - 1 {
+            let p0 = points[max(i - 1, 0)]
+            let p1 = points[i]
+            let p2 = points[min(i + 1, points.count - 1)]
+            let p3 = points[min(i + 2, points.count - 1)]
+
+            // Catmull-Rom → cubic bezier control points (alpha = 0.5 for centripetal)
+            let cp1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) / 6.0,
+                y: p1.y + (p2.y - p0.y) / 6.0
+            )
+            let cp2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) / 6.0,
+                y: p2.y - (p3.y - p1.y) / 6.0
+            )
+            ctx.addCurve(to: p2, control1: cp1, control2: cp2)
+        }
+    }
+
+    /// Draws a smooth filled spectrum curve for a single data source.
+    private func drawSpectrum(
+        _ data: SpectrumData,
+        in plotRect: CGRect,
+        ctx: CGContext,
+        fillColor: NSColor,
+        edgeColor: NSColor,
+        peakColor: NSColor
+    ) {
+        data.read(specMagnitudes, peaks: specPeaks)
+
+        let points = spectrumPoints(specMagnitudes, in: plotRect)
+        guard points.count >= 2 else { return }
+
+        // Filled area: bottom-left → spline curve → bottom-right → close
+        // Must NOT use move(to:) inside the spline to keep the path contiguous
+        ctx.saveGState()
+        ctx.beginPath()
+        ctx.move(to: CGPoint(x: points[0].x, y: plotRect.minY))
+        ctx.addLine(to: points[0])
+        addCatmullRomSpline(points, to: ctx)  // continues from points[0], no move
+        ctx.addLine(to: CGPoint(x: points.last!.x, y: plotRect.minY))
+        ctx.closePath()
+        ctx.setFillColor(fillColor.cgColor)
+        ctx.fillPath()
+        ctx.restoreGState()
+
+        // Edge line (smooth spline along the top)
+        ctx.saveGState()
+        ctx.beginPath()
+        addCatmullRomSpline(points, to: ctx, moveToStart: true)
+        ctx.setStrokeColor(edgeColor.cgColor)
+        ctx.setLineWidth(1.0)
+        ctx.setLineJoin(.round)
+        ctx.setLineCap(.round)
+        ctx.strokePath()
+        ctx.restoreGState()
+
+        // Peak hold line (smooth spline at peak values)
+        let peakPoints = spectrumPoints(specPeaks, in: plotRect)
+        var hasPeaks = false
+        for i in 0..<SpectrumData.binCount {
+            if specPeaks[i] > -79 { hasPeaks = true; break }
+        }
+        if hasPeaks {
+            ctx.saveGState()
+            ctx.beginPath()
+            addCatmullRomSpline(peakPoints, to: ctx, moveToStart: true)
+            ctx.setStrokeColor(peakColor.cgColor)
+            ctx.setLineWidth(0.5)
+            ctx.setLineCap(.round)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
     }
 
     /// Per-band gain contribution using filter-type-appropriate response curves.
@@ -377,6 +518,39 @@ final class FrequencyResponseView: NSView {
             NSColor.separatorColor.setStroke()
             bgPath.lineWidth = 0.5
             bgPath.stroke()
+        }
+
+        // ── 0. Spectrum analyzer (drawn before plotRect clip) ──
+        // Spectrum spans from top of Hz input fields (slider frame bottom)
+        // to bottom of dB gain labels (slider frame top).
+        let spectrumActive = preEqSpectrumEnabled || postEqSpectrumEnabled
+        if isBackdrop && spectrumActive, let slider = referenceSlider {
+            let sliderBottom = convert(CGPoint(x: 0, y: 0), from: slider).y
+            let sliderTop = convert(CGPoint(x: 0, y: slider.bounds.height), from: slider).y
+            let spectrumRect = CGRect(
+                x: plotRect.minX,
+                y: min(sliderBottom, sliderTop),
+                width: plotRect.width,
+                height: abs(sliderTop - sliderBottom)
+            )
+
+            ctx.saveGState()
+            ctx.clip(to: spectrumRect)
+
+            if preEqSpectrumEnabled, let data = preEqSpectrumData {
+                drawSpectrum(data, in: spectrumRect, ctx: ctx,
+                             fillColor: NSColor.systemGray.withAlphaComponent(0.06),
+                             edgeColor: NSColor.systemGray.withAlphaComponent(0.20),
+                             peakColor: NSColor.systemGray.withAlphaComponent(0.15))
+            }
+            if postEqSpectrumEnabled, let data = postEqSpectrumData {
+                drawSpectrum(data, in: spectrumRect, ctx: ctx,
+                             fillColor: NSColor.systemTeal.withAlphaComponent(0.08),
+                             edgeColor: NSColor.systemTeal.withAlphaComponent(0.35),
+                             peakColor: NSColor.white.withAlphaComponent(0.20))
+            }
+
+            ctx.restoreGState()
         }
 
         ctx.saveGState()
@@ -999,6 +1173,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var clippingCheckbox: NSButton!
     private var maxGainPicker: NSPopUpButton!
     private var autoScaleCheckbox: NSButton!
+    private var preEqSpectrumCheckbox: NSButton!
+    private var postEqSpectrumCheckbox: NSButton!
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
         (autoScaleCheckbox?.state == .on) ? 24 : audioEngine.maxGainDB
@@ -1316,11 +1492,31 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         autoScaleCheckbox = NSButton(checkboxWithTitle: "Auto",
                                        target: self, action: #selector(toggleAutoScale(_:)))
-        let autoScaleOn = iQualizeState.load().autoScale
+        let savedState = iQualizeState.load()
+        let autoScaleOn = savedState.autoScale
         autoScaleCheckbox.state = autoScaleOn ? .on : .off
         maxGainPicker.isEnabled = !autoScaleOn
 
+        preEqSpectrumCheckbox = NSButton(checkboxWithTitle: "Pre-EQ",
+                                          target: self, action: #selector(togglePreEqSpectrum(_:)))
+        preEqSpectrumCheckbox.state = savedState.preEqSpectrumEnabled ? .on : .off
+
+        postEqSpectrumCheckbox = NSButton(checkboxWithTitle: "Post-EQ",
+                                           target: self, action: #selector(togglePostEqSpectrum(_:)))
+        postEqSpectrumCheckbox.state = savedState.postEqSpectrumEnabled ? .on : .off
+
+        // Wire spectrum data to curve view
+        curveView.preEqSpectrumData = audioEngine.preEqAnalyzer.spectrumData
+        curveView.postEqSpectrumData = audioEngine.postEqAnalyzer.spectrumData
+        curveView.preEqSpectrumEnabled = savedState.preEqSpectrumEnabled
+        curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled
+        if savedState.preEqSpectrumEnabled || savedState.postEqSpectrumEnabled {
+            curveView.startAnimationIfNeeded()
+        }
+
         bottomRow.addArrangedSubview(bypassCheckbox)
+        bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
+        bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
@@ -1881,6 +2077,24 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         state.save()
         maxGainPicker.isEnabled = !on
         updateCurveView()
+    }
+
+    @objc private func togglePreEqSpectrum(_ sender: NSButton) {
+        let on = sender.state == .on
+        curveView.preEqSpectrumEnabled = on
+        if on { curveView.startAnimationIfNeeded() }
+        var state = iQualizeState.load()
+        state.preEqSpectrumEnabled = on
+        state.save()
+    }
+
+    @objc private func togglePostEqSpectrum(_ sender: NSButton) {
+        let on = sender.state == .on
+        curveView.postEqSpectrumEnabled = on
+        if on { curveView.startAnimationIfNeeded() }
+        var state = iQualizeState.load()
+        state.postEqSpectrumEnabled = on
+        state.save()
     }
 
     @objc private func addBandAtIndex(_ sender: NSMenuItem) {

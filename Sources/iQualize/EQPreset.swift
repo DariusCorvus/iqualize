@@ -10,6 +10,8 @@ struct iQualizeState: Codable {
     var maxGainDB: Float
     var bypassed: Bool
     var autoScale: Bool
+    var preEqSpectrumEnabled: Bool
+    var postEqSpectrumEnabled: Bool
     var hideFromDock: Bool
 
     static let defaultState = iQualizeState(
@@ -20,12 +22,14 @@ struct iQualizeState: Codable {
         maxGainDB: 12,
         bypassed: false,
         autoScale: true,
+        preEqSpectrumEnabled: false,
+        postEqSpectrumEnabled: false,
         hideFromDock: false
     )
 
     private static let key = "com.iqualize.state"
 
-    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, hideFromDock: Bool = false) {
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.peakLimiter = peakLimiter
@@ -33,6 +37,8 @@ struct iQualizeState: Codable {
         self.maxGainDB = maxGainDB
         self.bypassed = bypassed
         self.autoScale = autoScale
+        self.preEqSpectrumEnabled = preEqSpectrumEnabled
+        self.postEqSpectrumEnabled = postEqSpectrumEnabled
         self.hideFromDock = hideFromDock
     }
 
@@ -45,6 +51,8 @@ struct iQualizeState: Codable {
         maxGainDB = (try? container.decode(Float.self, forKey: .maxGainDB)) ?? 12
         bypassed = (try? container.decode(Bool.self, forKey: .bypassed)) ?? false
         autoScale = (try? container.decode(Bool.self, forKey: .autoScale)) ?? true
+        preEqSpectrumEnabled = (try? container.decode(Bool.self, forKey: .preEqSpectrumEnabled)) ?? false
+        postEqSpectrumEnabled = (try? container.decode(Bool.self, forKey: .postEqSpectrumEnabled)) ?? false
         hideFromDock = (try? container.decode(Bool.self, forKey: .hideFromDock)) ?? false
     }
 
