@@ -1,18 +1,27 @@
 # iQualize
 
-System-wide parametric equalizer for macOS. Native Swift menu bar app that captures all system audio via Core Audio Taps, applies real-time EQ processing, and routes it to your output device — no kernel extensions, no virtual audio drivers, no background daemons.
+> macOS doesn't have a system-wide parametric EQ.
+> So I built one in a day.
 
-```
-System Audio → CATap (muted) → IOProc → Ring Buffer → AVAudioSourceNode → EQ → Output Device
-```
+![iQualize at 04:57](./preview.webp)
 
-Built for people who care about how their Mac sounds.
+Built at 04:57 in Bavaria, listening to [Opera by Ballarak](https://open.spotify.com/track/6EkjiVchNqlYHoc2YNMiaV) on a Teufel Concept E 5.1.
+That's the only explanation you need for why this exists.
 
-## Why iQualize
+---
 
-macOS has no system-wide EQ. If your headphones are bass-heavy, your speakers are muddy in a corner, or you just want more kick in your techno — you're stuck. iQualize fixes that with a parametric EQ that sits between every app on your system and your output device.
+## What it is
 
-No virtual audio device tricks. No kernel extension nightmares after macOS updates. Core Audio Taps (macOS 14.2+) is the proper API for this, and iQualize uses it.
+A native macOS system-wide parametric EQ with a real-time Pre/Post spectrum analyzer.
+No virtual audio drivers. No Electron. No paywall.
+Just Swift, CoreAudio, and a CATap doing what they should've always done.
+
+## Why not eqMac
+
+eqMac uses a virtual audio driver.
+iQualize uses a CATap — Apple's native system audio tap introduced in macOS 14.
+No driver to install. No driver to break. No driver to fight with Bluetooth.
+It just works.
 
 ## Requirements
 
@@ -198,6 +207,8 @@ Prioritized by impact vs effort. Score = impact (1-5) x ease (1-5). Higher = do 
 | Auto-gain compensation | 3 | 2 | 6 | Maintain perceived loudness while EQ changes. Integrate over frequency-weighted gain |
 | Multichannel-aware EQ | 4 | 1 | 4 | Per-channel or per-group curves for 5.1/7.1 setups. Needs channel routing UI |
 
-## License
+---
 
-[TODO]
+I build tools that shouldn't need to exist.
+
+[darius.codes](https://darius.codes)
