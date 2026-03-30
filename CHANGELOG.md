@@ -2,6 +2,16 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.13.0] - 2026-03-30
+
+### Added
+- Keyboard shortcuts for EQ band adjustments: Arrow Up/Down for gain (±0.5 dB), Arrow Left/Right for frequency (semitone steps)
+- Tab/Shift+Tab to cycle selection between bands
+- Visual selection indicator with accent-colored border on the active band
+- Scroll wheel support: hover over sliders, frequency inputs, or Q inputs to adjust values by scrolling
+- Click-to-select on band columns clears text field focus for immediate keyboard control
+- Undo coalescing for rapid keyboard and scroll adjustments (500ms timer groups into single undo entry)
+
 ## [0.11.0] - 2026-03-30
 
 ### Added
