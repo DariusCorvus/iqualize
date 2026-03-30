@@ -57,13 +57,14 @@ open /Applications/iQualize.app
 - Per-band ghost fills, anchor dots with dB labels, and split boost/cut composite fill
 - Axis labels and detailed frequency/dB grid overlay
 - Catmull-Rom spline interpolation connecting slider knob positions (dashed gray line)
-- Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
+- Adjustable max gain range: ±6, ±12, ±18, or ±24 dB — or auto-scale to fit the current curve (up to ±24 dB)
 - Dynamic peak limiter (AUPeakLimiter) — prevents digital clipping at 0 dBFS
 - Smooth, glitch-free parameter updates — only changed values are written to the audio unit
 
 ### Band Management
 
 - Add bands with + buttons on either side of the EQ — new band copies the leftmost or rightmost band
+- Right-click context menu: Add Suggested Band finds the largest frequency gap and inserts a new band at the geometric midpoint
 - Delete, reorder via drag-and-drop or right-click context menu (Move Left/Right)
 - Minimum 1 band, maximum 31
 
@@ -115,8 +116,10 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - Presets submenu with checkmarks and active preset name in parent item
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Peak Limiter toggle
+- Hide from Dock toggle — run as a menu bar-only app
 - Current output device display
 - Open EQ window (Cmd+,)
+- About iQualize — shows version info
 
 ### Spectrum Analyzer
 
