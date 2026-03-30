@@ -17,6 +17,8 @@ final class EQWindow: NSWindow {
 @MainActor
 final class UnitTextField: NSTextField {
     var onFocus: (() -> Void)?
+    /// Called on scroll wheel with +1 (up) or -1 (down).
+    var onScroll: ((CGFloat) -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
@@ -27,6 +29,26 @@ final class UnitTextField: NSTextField {
             }
         }
         return result
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onScroll else { super.scrollWheel(with: event); return }
+        let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : -event.scrollingDeltaX
+        guard delta != 0 else { return }
+        onScroll(delta > 0 ? 1 : -1)
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+final class ScrollableSlider: NSSlider {
+    var onScroll: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onScroll else { super.scrollWheel(with: event); return }
+        let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : -event.scrollingDeltaX
+        guard delta != 0 else { return }
+        onScroll(delta > 0 ? 1 : -1)
     }
 }
 
@@ -231,7 +253,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var redoButton: NSButton!
     private var presetPicker: NSPopUpButton!
     private var slidersContainer: BandDropTarget!
-    private var sliders: [NSSlider] = []
+    private var sliders: [ScrollableSlider] = []
     private var gainLabels: [UnitTextField] = []
     private var freqLabels: [UnitTextField] = []
     private var qLabels: [UnitTextField] = []
@@ -579,10 +601,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 self.selectBand(nil)
                 gainLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].gain)
             }
+            gainLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustGain(at: i, direction: direction)
+            }
             gainLabels.append(gainLabel)
 
             let maxDB = Double(audioEngine.maxGainDB)
-            let slider = NSSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
+            let slider = ScrollableSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
                                   target: self, action: #selector(sliderMoved(_:)))
             slider.isVertical = true
             slider.numberOfTickMarks = 25
@@ -590,6 +615,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slider.tag = i
             slider.translatesAutoresizingMaskIntoConstraints = false
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
+            slider.onScroll = { [weak self] direction in
+                self?.scrollAdjustGain(at: i, direction: direction)
+            }
             if firstSlider == nil { firstSlider = slider }
             sliders.append(slider)
 
@@ -607,6 +635,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 self.selectBand(nil)
                 freqLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].frequency)
             }
+            freqLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustFrequency(at: i, direction: direction)
+            }
             freqLabels.append(freqLabel)
 
             let qLabel = UnitTextField(string: band.bandwidthLabel)
@@ -622,6 +653,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 guard let self, i < self.audioEngine.activePreset.bands.count else { return }
                 self.selectBand(nil)
                 qLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].bandwidth)
+            }
+            qLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustBandwidth(at: i, direction: direction)
             }
             qLabels.append(qLabel)
 
@@ -951,6 +985,58 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         preset.bands[index].frequency = newFreq
         audioEngine.activePreset = preset
         freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        markModified()
+    }
+
+    // MARK: - Scroll Wheel Adjustments
+
+    private func scrollAdjustGain(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let maxDB = audioEngine.maxGainDB
+        let delta: Float = direction > 0 ? 0.5 : -0.5
+        let newGain = min(max(preset.bands[index].gain + delta, -maxDB), maxDB)
+        guard newGain != preset.bands[index].gain else { return }
+
+        preset.bands[index].gain = newGain
+        audioEngine.activePreset = preset
+        sliders[index].doubleValue = Double(newGain)
+        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        markModified()
+    }
+
+    private func scrollAdjustFrequency(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let semitone: Float = pow(2.0, 1.0 / 12.0)
+        let factor = direction > 0 ? semitone : (1.0 / semitone)
+        let newFreq = min(max(preset.bands[index].frequency * factor, 20), 20000)
+
+        preset.bands[index].frequency = newFreq
+        audioEngine.activePreset = preset
+        freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        markModified()
+    }
+
+    private func scrollAdjustBandwidth(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let delta: Float = direction > 0 ? 0.1 : -0.1
+        let newQ = min(max(preset.bands[index].bandwidth + delta, 0.1), 10)
+        guard newQ != preset.bands[index].bandwidth else { return }
+
+        preset.bands[index].bandwidth = newQ
+        audioEngine.activePreset = preset
+        qLabels[index].stringValue = preset.bands[index].bandwidthLabel
         markModified()
     }
 
