@@ -96,28 +96,16 @@ final class FrequencyResponseView: NSView {
         }
         let peakDb = compositeGains.max() ?? 0
         let valleyDb = compositeGains.min() ?? 0
-        var span = peakDb - valleyDb
-        if span < 2.0 { span = 2.0 } // minimum range so flat doesn't break
 
-        var paddedPeak = peakDb + span * 0.2
-        var paddedValley = valleyDb - span * 0.2
+        // Use the largest absolute extreme so the range is always symmetric around 0 dB.
+        // This keeps the zero line aligned with the slider knobs.
+        var extreme = max(abs(peakDb), abs(valleyDb))
+        if extreme < 1.0 { extreme = 1.0 } // minimum ±1 dB so flat doesn't break
 
-        // Round to clean numbers
-        var displayMax = ceil(paddedPeak)
-        var displayMin = floor(paddedValley)
+        let padded = extreme * 1.2
+        let displayMax = ceil(padded)
 
-        // Make symmetric if close to symmetric
-        if abs(displayMax + displayMin) < span * 0.3 {
-            let m = max(abs(displayMax), abs(displayMin))
-            displayMax = m
-            displayMin = -m
-        }
-
-        // Ensure at least ±1 dB
-        if displayMax < 1.0 { displayMax = 1.0 }
-        if displayMin > -1.0 { displayMin = -1.0 }
-
-        return (min: displayMin, max: displayMax)
+        return (min: -displayMax, max: displayMax)
     }
 
     private func startAnimationIfNeeded() {
