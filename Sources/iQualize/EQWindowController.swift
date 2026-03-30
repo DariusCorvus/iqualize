@@ -1,9 +1,23 @@
 import AppKit
 
+// MARK: - Custom window for keyboard event interception
+
+@available(macOS 14.2, *)
+@MainActor
+final class EQWindow: NSWindow {
+    var onKeyDown: ((NSEvent) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if onKeyDown?(event) == true { return }
+        super.keyDown(with: event)
+    }
+}
+
 @available(macOS 14.2, *)
 @MainActor
 final class UnitTextField: NSTextField {
     var onFocus: (() -> Void)?
+    var onScroll: ((CGFloat) -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
@@ -14,6 +28,26 @@ final class UnitTextField: NSTextField {
             }
         }
         return result
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onScroll else { super.scrollWheel(with: event); return }
+        let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : -event.scrollingDeltaX
+        guard delta != 0 else { return }
+        onScroll(delta > 0 ? 1 : -1)
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+final class ScrollableSlider: NSSlider {
+    var onScroll: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onScroll else { super.scrollWheel(with: event); return }
+        let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : -event.scrollingDeltaX
+        guard delta != 0 else { return }
+        onScroll(delta > 0 ? 1 : -1)
     }
 }
 
@@ -701,6 +735,7 @@ private let bandDragType = NSPasteboard.PasteboardType("com.iqualize.band")
 @MainActor
 final class DraggableBandColumn: NSStackView, NSDraggingSource {
     var bandIndex: Int = 0
+    var onSelect: (() -> Void)?
     let dragHandle = DragHandleView()
     private var isDraggingFromHandle = false
 
@@ -721,6 +756,7 @@ final class DraggableBandColumn: NSStackView, NSDraggingSource {
     }
 
     override func mouseDown(with event: NSEvent) {
+        onSelect?()
         let loc = convert(event.locationInWindow, from: nil)
         let handleFrame = dragHandle.convert(dragHandle.bounds, to: self)
         isDraggingFromHandle = handleFrame.contains(loc)
@@ -951,7 +987,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var redoButton: NSButton!
     private var presetPicker: NSPopUpButton!
     private var slidersContainer: BandDropTarget!
-    private var sliders: [NSSlider] = []
+    private var sliders: [ScrollableSlider] = []
     private var gainLabels: [UnitTextField] = []
     private var freqLabels: [UnitTextField] = []
     private var qLabels: [UnitTextField] = []
@@ -980,11 +1016,18 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     /// Tracks whether the user has modified the active preset without saving.
     private var isModified = false
 
+    /// Currently selected band for keyboard navigation (nil = no selection).
+    private var selectedBandIndex: Int?
+
+    /// Undo coalescing for rapid keyboard/scroll adjustments.
+    private var keyboardAdjustSnapshot: EQPresetData?
+    private var keyboardCoalesceTimer: Timer?
+
     init(audioEngine: AudioEngine, presetStore: PresetStore) {
         self.audioEngine = audioEngine
         self.presetStore = presetStore
 
-        let window = NSWindow(
+        let window = EQWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 420),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
@@ -1003,6 +1046,40 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         // Don't auto-focus any input on open
         DispatchQueue.main.async { [weak self] in
             self?.window?.makeFirstResponder(nil)
+        }
+
+        // Keyboard shortcuts for band adjustment
+        window.onKeyDown = { [weak self] event in
+            guard let self else { return false }
+            if self.window?.firstResponder is NSTextView { return false }
+
+            let bands = self.audioEngine.activePreset.bands
+            guard !bands.isEmpty else { return false }
+
+            switch event.keyCode {
+            case 126: // Arrow Up — gain +0.5 dB
+                guard self.selectedBandIndex != nil else { return false }
+                self.adjustGainViaKeyboard(delta: +0.5)
+                return true
+            case 125: // Arrow Down — gain -0.5 dB
+                guard self.selectedBandIndex != nil else { return false }
+                self.adjustGainViaKeyboard(delta: -0.5)
+                return true
+            case 124: // Arrow Right — frequency up
+                guard self.selectedBandIndex != nil else { return false }
+                self.adjustFrequencyViaKeyboard(up: true)
+                return true
+            case 123: // Arrow Left — frequency down
+                guard self.selectedBandIndex != nil else { return false }
+                self.adjustFrequencyViaKeyboard(up: false)
+                return true
+            case 48: // Tab
+                let forward = !event.modifierFlags.contains(.shift)
+                self.moveBandSelection(forward: forward)
+                return true
+            default:
+                return false
+            }
         }
 
         let previousCallback = audioEngine.onStateChange
@@ -1264,6 +1341,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - Slider Building
 
     private func buildSliders() {
+        let previousSelection = selectedBandIndex
+        selectedBandIndex = nil
+
         for view in slidersContainer.arrangedSubviews {
             slidersContainer.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -1295,12 +1375,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             gainLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             gainLabel.onFocus = { [weak self] in
                 guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                self.selectBand(nil)
                 gainLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].gain)
+            }
+            gainLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustGain(at: i, direction: direction)
             }
             gainLabels.append(gainLabel)
 
             let maxDB = Double(effectiveMaxGainDB)
-            let slider = NSSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
+            let slider = ScrollableSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
                                   target: self, action: #selector(sliderMoved(_:)))
             slider.isVertical = true
             slider.numberOfTickMarks = 25
@@ -1308,6 +1392,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             slider.tag = i
             slider.translatesAutoresizingMaskIntoConstraints = false
             slider.heightAnchor.constraint(equalToConstant: 180).isActive = true
+            slider.onScroll = { [weak self] direction in
+                self?.scrollAdjustGain(at: i, direction: direction)
+            }
 
             sliders.append(slider)
 
@@ -1322,7 +1409,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             freqLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             freqLabel.onFocus = { [weak self] in
                 guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                self.selectBand(nil)
                 freqLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].frequency)
+            }
+            freqLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustFrequency(at: i, direction: direction)
             }
             freqLabels.append(freqLabel)
 
@@ -1337,7 +1428,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             qLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             qLabel.onFocus = { [weak self] in
                 guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                self.selectBand(nil)
                 qLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].bandwidth)
+            }
+            qLabel.onScroll = { [weak self] direction in
+                self?.scrollAdjustBandwidth(at: i, direction: direction)
             }
             qLabels.append(qLabel)
 
@@ -1356,6 +1451,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             typePicker.action = #selector(filterTypeChanged(_:))
             filterTypePickers.append(typePicker)
 
+            column.onSelect = { [weak self] in
+                self?.window?.makeFirstResponder(nil)
+                self?.selectBand(i)
+            }
             column.setupHandle()
             column.addArrangedSubview(gainLabel)
             column.addArrangedSubview(slider)
@@ -1429,6 +1528,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             let newWidth = max(bandsWidth, window.minSize.width)
             frame.size.width = newWidth
             window.setFrame(frame, display: true, animate: false)
+        }
+
+        // Restore band selection after rebuild
+        let bandCount = bands.count
+        if let prev = previousSelection, prev < bandCount {
+            selectBand(prev)
+        } else if previousSelection != nil, bandCount > 0 {
+            selectBand(bandCount - 1)
         }
 
         curveView.referenceSlider = sliders.first
@@ -1588,6 +1695,159 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private func updateWindowTitle() {
         let name = audioEngine.activePreset.name
         window?.title = isModified ? "iQualize — \(name)*" : "iQualize — \(name)"
+    }
+
+    // MARK: - Band Selection & Keyboard Navigation
+
+    private func selectBand(_ index: Int?) {
+        let oldIndex = selectedBandIndex
+        selectedBandIndex = index
+        if let old = oldIndex { updateBandSelectionVisual(old, selected: false) }
+        if let idx = index { updateBandSelectionVisual(idx, selected: true) }
+    }
+
+    private func updateBandSelectionVisual(_ index: Int, selected: Bool) {
+        let columns = slidersContainer.arrangedSubviews.compactMap { $0 as? DraggableBandColumn }
+        guard index < columns.count else { return }
+        let col = columns[index]
+        col.wantsLayer = true
+        if selected {
+            col.layer?.borderWidth = 2
+            col.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            col.layer?.cornerRadius = 6
+            col.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.06).cgColor
+        } else {
+            col.layer?.borderWidth = 0
+            col.layer?.borderColor = nil
+            col.layer?.backgroundColor = nil
+        }
+    }
+
+    private func moveBandSelection(forward: Bool) {
+        let count = audioEngine.activePreset.bands.count
+        guard count > 0 else { return }
+
+        let newIndex: Int
+        if let current = selectedBandIndex {
+            newIndex = forward ? (current + 1) % count : (current - 1 + count) % count
+        } else {
+            newIndex = forward ? 0 : count - 1
+        }
+        selectBand(newIndex)
+    }
+
+    private func beginKeyboardAdjustIfNeeded() {
+        if keyboardAdjustSnapshot == nil {
+            keyboardAdjustSnapshot = audioEngine.activePreset
+        }
+        keyboardCoalesceTimer?.invalidate()
+        keyboardCoalesceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.commitKeyboardAdjust()
+            }
+        }
+    }
+
+    private func commitKeyboardAdjust() {
+        guard let snapshot = keyboardAdjustSnapshot else { return }
+        keyboardCoalesceTimer?.invalidate()
+        keyboardCoalesceTimer = nil
+        if audioEngine.activePreset != snapshot {
+            registerUndo("Adjust EQ", oldPreset: snapshot)
+        }
+        keyboardAdjustSnapshot = nil
+    }
+
+    private func adjustGainViaKeyboard(delta: Float) {
+        guard let index = selectedBandIndex,
+              index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let maxDB = audioEngine.maxGainDB
+        let newGain = min(max(preset.bands[index].gain + delta, -maxDB), maxDB)
+        guard newGain != preset.bands[index].gain else { return }
+
+        preset.bands[index].gain = newGain
+        audioEngine.activePreset = preset
+        sliders[index].doubleValue = Double(newGain)
+        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        markModified()
+        updateCurveView()
+    }
+
+    private func adjustFrequencyViaKeyboard(up: Bool) {
+        guard let index = selectedBandIndex,
+              index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let semitone: Float = pow(2.0, 1.0 / 12.0)
+        let factor = up ? semitone : (1.0 / semitone)
+        let newFreq = min(max(preset.bands[index].frequency * factor, 20), 20000)
+
+        preset.bands[index].frequency = newFreq
+        audioEngine.activePreset = preset
+        freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        markModified()
+        updateCurveView()
+    }
+
+    // MARK: - Scroll Wheel Adjustments
+
+    private func scrollAdjustGain(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let maxDB = audioEngine.maxGainDB
+        let delta: Float = direction > 0 ? 0.5 : -0.5
+        let newGain = min(max(preset.bands[index].gain + delta, -maxDB), maxDB)
+        guard newGain != preset.bands[index].gain else { return }
+
+        preset.bands[index].gain = newGain
+        audioEngine.activePreset = preset
+        sliders[index].doubleValue = Double(newGain)
+        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        markModified()
+        updateCurveView()
+    }
+
+    private func scrollAdjustFrequency(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let semitone: Float = pow(2.0, 1.0 / 12.0)
+        let factor = direction > 0 ? semitone : (1.0 / semitone)
+        let newFreq = min(max(preset.bands[index].frequency * factor, 20), 20000)
+
+        preset.bands[index].frequency = newFreq
+        audioEngine.activePreset = preset
+        freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        markModified()
+        updateCurveView()
+    }
+
+    private func scrollAdjustBandwidth(at index: Int, direction: CGFloat) {
+        guard index < audioEngine.activePreset.bands.count else { return }
+        beginKeyboardAdjustIfNeeded()
+        forkIfBuiltIn()
+
+        var preset = audioEngine.activePreset
+        let delta: Float = direction > 0 ? 0.1 : -0.1
+        let newQ = min(max(preset.bands[index].bandwidth + delta, 0.1), 10)
+        guard newQ != preset.bands[index].bandwidth else { return }
+
+        preset.bands[index].bandwidth = newQ
+        audioEngine.activePreset = preset
+        qLabels[index].stringValue = preset.bands[index].bandwidthLabel
+        markModified()
+        updateCurveView()
     }
 
     // MARK: - Actions
