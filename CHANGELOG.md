@@ -2,6 +2,17 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.15.0] - 2026-03-30
+
+### Changed
+- Replace static "Prevent Clipping" with a real dynamic peak limiter using Apple's AUPeakLimiter
+- Rename "Prevent Clipping" to "Peak Limiter" in menu bar and EQ window
+- Rename `preventClipping` property and JSON key to `peakLimiter`
+
+### Removed
+- Static preamp gain reduction (`preampGain` computed property)
+- Legacy state migration code (no existing users to migrate)
+
 ## [0.13.0] - 2026-03-30
 
 ### Added

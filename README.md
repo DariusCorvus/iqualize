@@ -94,7 +94,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 
 - Quick preset selection with checkmarks
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
-- Prevent Clipping and Low Latency toggles
+- Peak Limiter and Low Latency toggles
 - Current output device display
 - Open EQ window (Cmd+,)
 
