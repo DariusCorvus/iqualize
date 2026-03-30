@@ -54,8 +54,11 @@ final class ScrollableSlider: NSSlider {
 @available(macOS 14.2, *)
 @MainActor
 final class ClickThroughView: NSView {
+    var onClickBackground: (() -> Void)?
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(nil)
+        onClickBackground?()
         super.mouseDown(with: event)
     }
 }
@@ -1096,6 +1099,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func setupUI() {
         let clickView = ClickThroughView()
+        clickView.onClickBackground = { [weak self] in
+            self?.selectBand(nil)
+        }
         window?.contentView = clickView
         guard let contentView = window?.contentView else { return }
         contentView.wantsLayer = true
@@ -1712,13 +1718,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         let col = columns[index]
         col.wantsLayer = true
         if selected {
-            col.layer?.borderWidth = 2
-            col.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            col.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
             col.layer?.cornerRadius = 6
-            col.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.06).cgColor
         } else {
-            col.layer?.borderWidth = 0
-            col.layer?.borderColor = nil
             col.layer?.backgroundColor = nil
         }
     }
