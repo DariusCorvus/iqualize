@@ -6,7 +6,6 @@ struct iQualizeState: Codable {
     var isEnabled: Bool
     var selectedPresetID: UUID
     var preventClipping: Bool
-    var lowLatency: Bool
     var windowOpen: Bool
     var maxGainDB: Float
     var bypassed: Bool
@@ -16,7 +15,6 @@ struct iQualizeState: Codable {
         isEnabled: false,
         selectedPresetID: EQPresetData.flat.id,
         preventClipping: true,
-        lowLatency: false,
         windowOpen: false,
         maxGainDB: 12,
         bypassed: false,
@@ -36,18 +34,16 @@ struct iQualizeState: Codable {
         case isEnabled
         case selectedPresetID
         case preventClipping
-        case lowLatency
         case windowOpen
         case maxGainDB
         case bypassed
         case autoScale
     }
 
-    init(isEnabled: Bool, selectedPresetID: UUID, preventClipping: Bool, lowLatency: Bool = false, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true) {
+    init(isEnabled: Bool, selectedPresetID: UUID, preventClipping: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.preventClipping = preventClipping
-        self.lowLatency = lowLatency
         self.windowOpen = windowOpen
         self.maxGainDB = maxGainDB
         self.bypassed = bypassed
@@ -58,7 +54,6 @@ struct iQualizeState: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         isEnabled = (try? container.decode(Bool.self, forKey: .isEnabled)) ?? false
         preventClipping = (try? container.decode(Bool.self, forKey: .preventClipping)) ?? true
-        lowLatency = (try? container.decode(Bool.self, forKey: .lowLatency)) ?? false
         windowOpen = (try? container.decode(Bool.self, forKey: .windowOpen)) ?? false
         maxGainDB = (try? container.decode(Float.self, forKey: .maxGainDB)) ?? 12
         bypassed = (try? container.decode(Bool.self, forKey: .bypassed)) ?? false

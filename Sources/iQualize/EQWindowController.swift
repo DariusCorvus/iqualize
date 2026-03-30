@@ -997,7 +997,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var filterTypePickers: [NSPopUpButton] = []
     private var bypassCheckbox: NSButton!
     private var clippingCheckbox: NSButton!
-    private var lowLatencyCheckbox: NSButton!
     private var maxGainPicker: NSPopUpButton!
     private var autoScaleCheckbox: NSButton!
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
@@ -1293,10 +1292,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                                      target: self, action: #selector(toggleClipping(_:)))
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
 
-        lowLatencyCheckbox = NSButton(checkboxWithTitle: "Low Latency",
-                                       target: self, action: #selector(toggleLowLatency(_:)))
-        lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
-
         let bottomRow = NSStackView()
         bottomRow.orientation = .horizontal
         bottomRow.distribution = .fill
@@ -1330,7 +1325,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
         bottomRow.addArrangedSubview(autoScaleCheckbox)
-        bottomRow.addArrangedSubview(lowLatencyCheckbox)
         bottomRow.addArrangedSubview(clippingCheckbox)
 
         mainStack.addArrangedSubview(bottomRow)
@@ -1567,7 +1561,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         updateOutputLabel()
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
-        lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
         let autoOn = iQualizeState.load().autoScale
         autoScaleCheckbox.state = autoOn ? .on : .off
         maxGainPicker.isEnabled = !autoOn
@@ -1869,13 +1862,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         audioEngine.preventClipping = sender.state == .on
         var state = iQualizeState.load()
         state.preventClipping = audioEngine.preventClipping
-        state.save()
-    }
-
-    @objc private func toggleLowLatency(_ sender: NSButton) {
-        audioEngine.lowLatency = sender.state == .on
-        var state = iQualizeState.load()
-        state.lowLatency = audioEngine.lowLatency
         state.save()
     }
 
