@@ -80,6 +80,16 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - Slider drags coalesced into single undo actions
 - Cmd+Z / Cmd+Shift+Z
 
+### Keyboard & Scroll
+
+- Click a band to select it (accent-colored border indicator)
+- Arrow Up/Down to adjust gain (±0.5 dB per step)
+- Arrow Left/Right to adjust frequency (semitone steps)
+- Tab / Shift+Tab to cycle between bands
+- Scroll wheel over sliders to adjust gain
+- Scroll wheel over frequency/Q inputs to adjust those values
+- Rapid adjustments coalesced into single undo entries
+
 ### Menu Bar
 
 - Quick preset selection with checkmarks
@@ -138,7 +148,7 @@ Prioritized by impact vs effort. Score = impact (1-5) x ease (1-5). Higher = do 
 | Feature | Impact | Ease | Score | Notes |
 |---|---|---|---|---|
 | Smart frequency suggestions | 3 | 5 | 15 | New bands fill the largest spectral gap instead of copying the edge band |
-| Keyboard shortcuts for bands | 3 | 5 | 15 | Arrow keys to adjust selected band gain/freq |
+| ~~Keyboard shortcuts for bands~~ | ~~3~~ | ~~5~~ | ~~15~~ | ✅ Done in v0.13.0 — Arrow keys for gain/freq, Tab to cycle bands, scroll wheel on sliders/inputs |
 | ~~Visual frequency response curve~~ | ~~5~~ | ~~3~~ | ~~15~~ | ✅ Done in v0.11.0 — biquad response curve with ghost fills, anchor dots, axis labels |
 
 ### High impact, moderate effort (score 10-14)
