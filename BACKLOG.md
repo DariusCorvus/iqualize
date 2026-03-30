@@ -1,12 +1,9 @@
-# Perth Backlog
+# iQualize Backlog
 
 ## Medium Priority
 
 ### Per-app EQ profiles
 Sketch architecture for per-app routing before v1 ships to validate forward-compatibility.
-
-### Custom EQ sliders
-v0.2 — separate window with 10 vertical sliders, frequency labels, dB readout, "modified preset" indicator.
 
 ### Accessibility
 Keyboard navigation, VoiceOver labels, contrast for icon states.

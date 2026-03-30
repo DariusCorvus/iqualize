@@ -91,7 +91,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 
 ### Menu Bar
 
-- Quick preset selection with checkmarks
+- Presets submenu with checkmarks and active preset name in parent item
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Peak Limiter toggle
 - Current output device display
@@ -104,6 +104,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - 2048-point FFT via Accelerate vDSP with Hann windowing and log-frequency binning
 - Smooth Catmull-Rom spline rendering with peak hold lines
 - Lock-free double-buffered audio-to-UI transfer for glitch-free 60fps updates
+- Monochrome white/gray spectrum layers with z-ordered rendering; blue EQ response curve is the only colored element
 - Spectrum toggle states persist across app restarts
 
 ### System Integration
