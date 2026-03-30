@@ -38,7 +38,6 @@ open /Applications/iQualize.app
 - Catmull-Rom spline interpolation connecting slider knob positions (dashed gray line)
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
 - Anti-clipping preamp — automatically reduces gain to prevent digital clipping
-- Low Latency mode (50ms buffer) for real-time monitoring
 - Smooth, glitch-free parameter updates — only changed values are written to the audio unit
 
 ### Band Management
@@ -94,7 +93,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 
 - Quick preset selection with checkmarks
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
-- Peak Limiter and Low Latency toggles
+- Peak Limiter toggle
 - Current output device display
 - Open EQ window (Cmd+,)
 
