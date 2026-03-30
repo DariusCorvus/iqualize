@@ -37,7 +37,7 @@ open /Applications/iQualize.app
 - Axis labels and detailed frequency/dB grid overlay
 - Catmull-Rom spline interpolation connecting slider knob positions (dashed gray line)
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB
-- Anti-clipping preamp — automatically reduces gain to prevent digital clipping
+- Dynamic peak limiter (AUPeakLimiter) — prevents digital clipping at 0 dBFS
 - Smooth, glitch-free parameter updates — only changed values are written to the audio unit
 
 ### Band Management
@@ -96,6 +96,15 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - Peak Limiter toggle
 - Current output device display
 - Open EQ window (Cmd+,)
+
+### Spectrum Analyzer
+
+- Dual real-time spectrum analyzer: pre-EQ (raw input) and post-EQ (processed output)
+- Independent toggle checkboxes for pre-EQ and post-EQ display
+- 2048-point FFT via Accelerate vDSP with Hann windowing and log-frequency binning
+- Smooth Catmull-Rom spline rendering with peak hold lines
+- Lock-free double-buffered audio-to-UI transfer for glitch-free 60fps updates
+- Spectrum toggle states persist across app restarts
 
 ### System Integration
 
@@ -157,8 +166,8 @@ Prioritized by impact vs effort. Score = impact (1-5) x ease (1-5). Higher = do 
 | ~~Filter types per band~~ | ~~5~~ | ~~3~~ | ~~15~~ | ✅ Done in v0.10.0 — Bell, low/high shelf, low/high pass, notch, bandpass |
 | Per-band bypass | 4 | 3 | 12 | Set individual band gain to 0 without losing saved value, toggle in UI |
 | Drag-on-curve editing | 5 | 2 | 10 | Drag band nodes directly on the response curve — needs hit testing, coordinate mapping |
-| Real-time spectrum analyzer | 5 | 2 | 10 | FFT of audio buffer, render behind EQ curve. Pre/post EQ modes. Huge visual feature |
-| Peak hold markers | 3 | 4 | 12 | Piggybacks on the analyzer — small addition once FFT exists |
+| ~~Real-time spectrum analyzer~~ | ~~5~~ | ~~2~~ | ~~10~~ | ✅ Done in v0.16.0 — dual pre/post-EQ FFT spectrum with Catmull-Rom splines, peak hold lines |
+| ~~Peak hold markers~~ | ~~3~~ | ~~4~~ | ~~12~~ | ✅ Done in v0.16.0 — included in spectrum analyzer as peak hold spline lines |
 | Filter slope selection | 3 | 4 | 12 | 6/12/24/48 dB/oct for pass filters — expose existing Core Audio param |
 | Per-band solo | 3 | 3 | 9 | Mute all other bands, play only the selected band's affected range |
 | Menu bar level meter | 3 | 3 | 9 | RMS/peak meter from the output buffer, render in menu bar icon |

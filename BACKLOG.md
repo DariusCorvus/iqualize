@@ -11,9 +11,6 @@ v0.2 — separate window with 10 vertical sliders, frequency labels, dB readout,
 ### Accessibility
 Keyboard navigation, VoiceOver labels, contrast for icon states.
 
-### Low-latency mode
-Smaller ring buffer option for users who prefer lower latency over jitter tolerance.
-
 ---
 
 ## Resolved
