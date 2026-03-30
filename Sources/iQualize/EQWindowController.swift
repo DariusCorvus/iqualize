@@ -1284,14 +1284,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomDivider.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
         bottomDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
-        // Row 3: Bottom bar — EQ Enabled (left) + Prevent Clipping (right)
+        // Row 3: Bottom bar — EQ Enabled (left) + Peak Limiter (right)
         bypassCheckbox = NSButton(checkboxWithTitle: "Bypass",
                                     target: self, action: #selector(toggleBypass(_:)))
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
 
-        clippingCheckbox = NSButton(checkboxWithTitle: "Prevent Clipping",
+        clippingCheckbox = NSButton(checkboxWithTitle: "Peak Limiter",
                                      target: self, action: #selector(toggleClipping(_:)))
-        clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
+        clippingCheckbox.state = audioEngine.peakLimiter ? .on : .off
 
         lowLatencyCheckbox = NSButton(checkboxWithTitle: "Low Latency",
                                        target: self, action: #selector(toggleLowLatency(_:)))
@@ -1566,7 +1566,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         updateDeleteButton()
         updateOutputLabel()
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
-        clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
+        clippingCheckbox.state = audioEngine.peakLimiter ? .on : .off
         lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
         let autoOn = iQualizeState.load().autoScale
         autoScaleCheckbox.state = autoOn ? .on : .off
@@ -1866,9 +1866,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func toggleClipping(_ sender: NSButton) {
-        audioEngine.preventClipping = sender.state == .on
+        audioEngine.peakLimiter = sender.state == .on
         var state = iQualizeState.load()
-        state.preventClipping = audioEngine.preventClipping
+        state.peakLimiter = audioEngine.peakLimiter
         state.save()
     }
 

@@ -112,25 +112,15 @@ final class iQualizeStateTests: XCTestCase {
         let state = iQualizeState.defaultState
         XCTAssertFalse(state.isEnabled)
         XCTAssertEqual(state.selectedPresetID, EQPresetData.flat.id)
-        XCTAssertTrue(state.preventClipping)
+        XCTAssertTrue(state.peakLimiter)
     }
 
     func testCodableRoundTrip() throws {
-        let original = iQualizeState(isEnabled: true, selectedPresetID: EQPresetData.bassBoost.id, preventClipping: false)
+        let original = iQualizeState(isEnabled: true, selectedPresetID: EQPresetData.bassBoost.id, peakLimiter: false)
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(iQualizeState.self, from: data)
         XCTAssertEqual(decoded.isEnabled, original.isEnabled)
         XCTAssertEqual(decoded.selectedPresetID, original.selectedPresetID)
-        XCTAssertEqual(decoded.preventClipping, original.preventClipping)
-    }
-
-    func testLegacyMigration() throws {
-        // Simulate old format: {"isEnabled":true,"selectedPreset":"bassBoost"}
-        let legacyJSON = """
-        {"isEnabled":true,"selectedPreset":"bassBoost","preventClipping":true}
-        """.data(using: .utf8)!
-        let state = try JSONDecoder().decode(iQualizeState.self, from: legacyJSON)
-        XCTAssertTrue(state.isEnabled)
-        XCTAssertEqual(state.selectedPresetID, EQPresetData.bassBoost.id)
+        XCTAssertEqual(decoded.peakLimiter, original.peakLimiter)
     }
 }

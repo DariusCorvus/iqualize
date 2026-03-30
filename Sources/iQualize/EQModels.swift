@@ -69,13 +69,6 @@ struct EQPresetData: Codable, Equatable, Sendable, Identifiable {
     var bands: [EQBand]
     let isBuiltIn: Bool
 
-    /// Automatic preamp reduction to prevent clipping.
-    /// Uses half the max boost as a compromise between clipping prevention and volume.
-    var preampGain: Float {
-        let maxBoost = bands.map(\.gain).max() ?? 0
-        return maxBoost > 0 ? -(maxBoost * 0.5) : 0
-    }
-
     var isFlat: Bool {
         bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
     }
