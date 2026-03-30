@@ -47,6 +47,9 @@ final class FrequencyResponseView: NSView {
     /// Called each animation frame with interpolated gain values so sliders can be updated.
     var onDisplayGainsChanged: (([Float]) -> Void)?
 
+    /// Called when the animated display range changes, so slider min/max can be updated.
+    var onDisplayRangeChanged: ((Double, Double) -> Void)?
+
     /// When true, draws with transparent background (for use as slider backdrop).
     var isBackdrop = false
 
@@ -138,6 +141,8 @@ final class FrequencyResponseView: NSView {
             currentDisplayMin = targetDisplayMin
         }
 
+        onDisplayRangeChanged?(currentDisplayMin, currentDisplayMax)
+
         // Lerp band gains (for spline + slider knob animation)
         // Adaptive: slower for large jumps (preset changes), faster for small tweaks
         let maxGainDelta = zip(displayGains, bands).map { abs($0 - $1.gain) }.max() ?? 0
@@ -174,16 +179,10 @@ final class FrequencyResponseView: NSView {
     }
 
     private func gainToY(_ gain: Float, height: CGFloat) -> CGFloat {
-        let mid = height / 2.0
-        if gain >= 0 {
-            // Top half: 0 dB at center, +displayMax at top
-            guard currentDisplayMax > 0 else { return mid }
-            return mid + CGFloat(Double(gain) / currentDisplayMax) * mid
-        } else {
-            // Bottom half: 0 dB at center, displayMin (negative) at bottom
-            guard currentDisplayMin < 0 else { return mid }
-            return mid + CGFloat(Double(gain) / -currentDisplayMin) * mid
-        }
+        let range = currentDisplayMax - currentDisplayMin
+        guard range > 0 else { return height / 2.0 }
+        let norm = (Double(gain) - currentDisplayMin) / range
+        return CGFloat(norm) * height
     }
 
     private func clampToDisplayRange(_ gain: Float) -> Float {
@@ -1166,6 +1165,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 } else {
                     self.gainLabels[i].stringValue = String(format: "%+.1f dB", g)
                 }
+            }
+        }
+        curveView.onDisplayRangeChanged = { [weak self] displayMin, displayMax in
+            guard let self else { return }
+            for slider in self.sliders {
+                slider.minValue = displayMin
+                slider.maxValue = displayMax
             }
         }
 
