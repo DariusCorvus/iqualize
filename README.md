@@ -30,6 +30,18 @@ It just works.
 
 ## Install
 
+### Download (recommended)
+
+Grab the latest `.dmg` from [Releases](https://github.com/DariusCorvus/iqualize/releases), open it, and drag iQualize to Applications.
+
+iQualize is unsigned. Apple charges $99/year for a developer certificate. If macOS blocks the app, run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/iQualize.app
+```
+
+### Build from source
+
 ```bash
 bash install.sh          # builds, signs, installs to /Applications
 open /Applications/iQualize.app
