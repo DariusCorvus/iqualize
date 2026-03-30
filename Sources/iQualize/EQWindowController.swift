@@ -34,6 +34,18 @@ final class FrequencyResponseView: NSView {
     private var bands: [EQBand] = []
     private var maxGainDB: Float = 12
     private var sampleRate: Double = 48000
+    private var autoScale: Bool = true
+
+    // Animation state
+    private var currentDisplayMax: Double = 12.0
+    private var currentDisplayMin: Double = -12.0
+    private var targetDisplayMax: Double = 12.0
+    private var targetDisplayMin: Double = -12.0
+    private var displayGains: [Float] = []  // lerped gains for spline/slider animation
+    private var animationTimer: DispatchSourceTimer?
+
+    /// Called each animation frame with interpolated gain values so sliders can be updated.
+    var onDisplayGainsChanged: (([Float]) -> Void)?
 
     /// When true, draws with transparent background (for use as slider backdrop).
     var isBackdrop = false
@@ -44,12 +56,132 @@ final class FrequencyResponseView: NSView {
     /// All band sliders — used to compute column center X at draw time.
     var allSliders: [NSSlider] = []
 
-    func updateBands(_ bands: [EQBand], maxGainDB: Float, sampleRate: Double) {
+    func updateBands(_ bands: [EQBand], maxGainDB: Float, sampleRate: Double, autoScale: Bool) {
+        let targetGains = bands.map { $0.gain }
+
+        // Resize displayGains to match new band count, lerping instead of snapping
+        if displayGains.count != bands.count {
+            if displayGains.count < bands.count {
+                // New bands: start from 0 and lerp in
+                displayGains.append(contentsOf: [Float](repeating: 0, count: bands.count - displayGains.count))
+            } else {
+                // Removed bands: truncate
+                displayGains = Array(displayGains.prefix(bands.count))
+            }
+        }
+
         self.bands = bands
         self.maxGainDB = maxGainDB
         self.sampleRate = sampleRate
+        self.autoScale = autoScale
+
+        // Start animation if gains differ
+        if displayGains != targetGains {
+            startAnimationIfNeeded()
+        }
+
         needsDisplay = true
     }
+
+    deinit {
+        animationTimer?.cancel()
+        animationTimer = nil
+    }
+
+    // MARK: - Auto-scale
+
+    private func computeTargetRange(compositeGains: [Double]) -> (min: Double, max: Double) {
+        guard autoScale else {
+            return (min: Double(-maxGainDB), max: Double(maxGainDB))
+        }
+        let peakDb = compositeGains.max() ?? 0
+        let valleyDb = compositeGains.min() ?? 0
+        var span = peakDb - valleyDb
+        if span < 2.0 { span = 2.0 } // minimum range so flat doesn't break
+
+        var paddedPeak = peakDb + span * 0.2
+        var paddedValley = valleyDb - span * 0.2
+
+        // Round to clean numbers
+        var displayMax = ceil(paddedPeak)
+        var displayMin = floor(paddedValley)
+
+        // Make symmetric if close to symmetric
+        if abs(displayMax + displayMin) < span * 0.3 {
+            let m = max(abs(displayMax), abs(displayMin))
+            displayMax = m
+            displayMin = -m
+        }
+
+        // Ensure at least ±1 dB
+        if displayMax < 1.0 { displayMax = 1.0 }
+        if displayMin > -1.0 { displayMin = -1.0 }
+
+        return (min: displayMin, max: displayMax)
+    }
+
+    private func startAnimationIfNeeded() {
+        guard animationTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16))
+        timer.setEventHandler { [weak self] in
+            self?.animationTick()
+        }
+        timer.resume()
+        animationTimer = timer
+    }
+
+    private func stopAnimation() {
+        animationTimer?.cancel()
+        animationTimer = nil
+    }
+
+    private func animationTick() {
+        var converged = true
+
+        // Lerp display range
+        let maxDelta = max(abs(targetDisplayMax - currentDisplayMax), abs(targetDisplayMin - currentDisplayMin))
+        let rangeFactor = maxDelta > 5.0 ? 0.04 : maxDelta > 2.0 ? 0.07 : 0.10
+        currentDisplayMax += (targetDisplayMax - currentDisplayMax) * rangeFactor
+        currentDisplayMin += (targetDisplayMin - currentDisplayMin) * rangeFactor
+
+        if abs(currentDisplayMax - targetDisplayMax) > 0.01 ||
+           abs(currentDisplayMin - targetDisplayMin) > 0.01 {
+            converged = false
+        } else {
+            currentDisplayMax = targetDisplayMax
+            currentDisplayMin = targetDisplayMin
+        }
+
+        // Lerp band gains (for spline + slider knob animation)
+        // Adaptive: slower for large jumps (preset changes), faster for small tweaks
+        let maxGainDelta = zip(displayGains, bands).map { abs($0 - $1.gain) }.max() ?? 0
+        let gainFactor: Float = maxGainDelta > 6.0 ? 0.05 : maxGainDelta > 2.0 ? 0.07 : 0.10
+        var gainsChanged = false
+        for i in 0..<min(displayGains.count, bands.count) {
+            let target = bands[i].gain
+            let delta = target - displayGains[i]
+            if abs(delta) > 0.01 {
+                displayGains[i] += delta * gainFactor
+                converged = false
+                gainsChanged = true
+            } else if displayGains[i] != target {
+                displayGains[i] = target
+                gainsChanged = true
+            }
+        }
+
+        if gainsChanged {
+            onDisplayGainsChanged?(displayGains)
+        }
+
+        if converged {
+            stopAnimation()
+        }
+        needsDisplay = true
+    }
+
+    // MARK: - Coordinate mapping
 
     private func freqToX(_ freq: Float, width: CGFloat) -> CGFloat {
         let norm = log10(Double(freq) / 20.0) / 3.0 // log10(20000/20) = 3
@@ -57,8 +189,20 @@ final class FrequencyResponseView: NSView {
     }
 
     private func gainToY(_ gain: Float, height: CGFloat) -> CGFloat {
+        let range = currentDisplayMax - currentDisplayMin
+        guard range > 0 else { return height / 2.0 }
+        let norm = (Double(gain) - currentDisplayMin) / range
+        return CGFloat(norm) * height
+    }
+
+    /// Fixed Y mapping using maxGainDB — for spline that must align with slider knobs.
+    private func fixedGainToY(_ gain: Float, height: CGFloat) -> CGFloat {
         let norm = Double(gain) / Double(maxGainDB)
         return height / 2.0 + CGFloat(norm) * (height / 2.0)
+    }
+
+    private func clampToDisplayRange(_ gain: Float) -> Float {
+        min(max(gain, Float(currentDisplayMin)), Float(currentDisplayMax))
     }
 
     /// Per-band gain contribution using filter-type-appropriate response curves.
@@ -127,10 +271,11 @@ final class FrequencyResponseView: NSView {
         }
 
         // Build control points: (pixelX, gain)
-        // Anchor at left/right edges at 0 dB
+        // Anchor at left/right edges at 0 dB — use displayGains for smooth animation
         var pts: [(x: CGFloat, y: Float)] = [(plotRect.minX, 0)]
-        for (i, band) in bands.enumerated() {
-            pts.append((centerXs[i], band.gain))
+        for i in 0..<bands.count {
+            let gain = i < displayGains.count ? displayGains[i] : bands[i].gain
+            pts.append((centerXs[i], gain))
         }
         pts.append((plotRect.maxX, 0))
 
@@ -168,7 +313,7 @@ final class FrequencyResponseView: NSView {
             )
 
             let clamped = min(max(gain, -maxGainDB), maxGainDB)
-            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+            let y = fixedGainToY(clamped, height: plotRect.height) + plotRect.minY
             result.append(CGPoint(x: pixelX, y: y))
         }
         return result
@@ -231,11 +376,17 @@ final class FrequencyResponseView: NSView {
         }
         ctx.strokePath()
 
-        // dB grid (horizontal lines)
-        let dbStep: Float = 6
-        var dbLine = -maxGainDB
-        while dbLine <= maxGainDB {
-            let y = gainToY(dbLine, height: plotRect.height) + plotRect.minY
+        // dB grid (horizontal lines) — step adapts to display range
+        let displayRange = currentDisplayMax - currentDisplayMin
+        let dbStep: Double
+        if displayRange <= 4 { dbStep = 1 }
+        else if displayRange <= 8 { dbStep = 2 }
+        else if displayRange <= 16 { dbStep = 3 }
+        else { dbStep = 6 }
+        var dbLine = -ceil(currentDisplayMax / dbStep) * dbStep
+        while dbLine <= currentDisplayMax + dbStep {
+            let y = gainToY(Float(dbLine), height: plotRect.height) + plotRect.minY
+            guard y >= plotRect.minY && y <= plotRect.maxY else { dbLine += dbStep; continue }
             if abs(dbLine) < 0.1 {
                 // 0 dB line — brighter
                 ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
@@ -265,10 +416,18 @@ final class FrequencyResponseView: NSView {
             perBandGains.reduce(0.0) { $0 + $1[i] }
         }
 
+        // Auto-scale: compute target range and animate toward it
+        let (tMin, tMax) = computeTargetRange(compositeGains: compositeGains)
+        if tMin != targetDisplayMin || tMax != targetDisplayMax {
+            targetDisplayMin = tMin
+            targetDisplayMax = tMax
+            startAnimationIfNeeded()
+        }
+
         // Map to pixel coordinates
         let compositePts: [CGPoint] = zip(frequencies, compositeGains).map { freq, gain in
             let t = log10(freq / 20.0) / 3.0
-            let clamped = min(max(Float(gain), -maxGainDB), maxGainDB)
+            let clamped = clampToDisplayRange(Float(gain))
             let x = CGFloat(t) * plotRect.width + plotRect.minX
             let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
             return CGPoint(x: x, y: y)
@@ -283,7 +442,7 @@ final class FrequencyResponseView: NSView {
             var first = true
             for (i, freq) in frequencies.enumerated() {
                 let t = log10(freq / 20.0) / 3.0
-                let clamped = min(max(Float(bandGains[i]), -maxGainDB), maxGainDB)
+                let clamped = clampToDisplayRange(Float(bandGains[i]))
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
                 let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
                 if first { ghostPath.move(to: CGPoint(x: x, y: y)); first = false }
@@ -347,7 +506,7 @@ final class FrequencyResponseView: NSView {
                 let freq = Double(band.frequency)
                 let compositeDB = allCoeffs.reduce(0.0) { $0 + $1.gainDB(at: freq, sampleRate: sampleRate) }
                 let t = log10(freq / 20.0) / 3.0
-                let clamped = min(max(Float(compositeDB), -maxGainDB), maxGainDB)
+                let clamped = clampToDisplayRange(Float(compositeDB))
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
                 let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
 
@@ -410,7 +569,7 @@ final class FrequencyResponseView: NSView {
                 let gain = compositeGain(at: freq)
                 let clamped = min(max(gain, -maxGainDB), maxGainDB)
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
-                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+                let y = fixedGainToY(clamped, height: plotRect.height) + plotRect.minY
                 curvePoints.append(CGPoint(x: x, y: y))
             }
         }
@@ -435,7 +594,7 @@ final class FrequencyResponseView: NSView {
                 let compositeDB = allCoeffs.isEmpty ? 0.0 :
                     allCoeffs.reduce(0.0) { $0 + $1.gainDB(at: freq, sampleRate: sampleRate) }
                 let t = log10(freq / 20.0) / 3.0
-                let clamped = min(max(Float(compositeDB), -maxGainDB), maxGainDB)
+                let clamped = clampToDisplayRange(Float(compositeDB))
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
                 let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
 
@@ -492,11 +651,12 @@ final class FrequencyResponseView: NSView {
                 .font: NSFont.systemFont(ofSize: 8, weight: .regular),
                 .foregroundColor: NSColor.white.withAlphaComponent(0.20),
             ]
-            let maxInt = Int(maxGainDB)
+            let displayMaxInt = Int(round(currentDisplayMax))
+            let displayMinInt = Int(round(currentDisplayMin))
             let axisLabels: [(Float, String)] = [
-                (maxGainDB, "+\(maxInt)"),
+                (Float(currentDisplayMax), "+\(displayMaxInt)"),
                 (0, "0"),
-                (-maxGainDB, "-\(maxInt)"),
+                (Float(currentDisplayMin), "\(displayMinInt)"),
             ]
             for (db, text) in axisLabels {
                 let y = gainToY(db, height: plotRect.height) + plotRect.minY
@@ -816,6 +976,11 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var clippingCheckbox: NSButton!
     private var lowLatencyCheckbox: NSButton!
     private var maxGainPicker: NSPopUpButton!
+    private var autoScaleCheckbox: NSButton!
+    /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
+    private var effectiveMaxGainDB: Float {
+        (autoScaleCheckbox?.state == .on) ? 24 : audioEngine.maxGainDB
+    }
     private var outputLabel: NSTextField!
     private var newButton: NSButton!
     private var saveControl: NSSegmentedControl!
@@ -1003,6 +1168,21 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView = FrequencyResponseView()
         curveView.isBackdrop = true
         curveView.translatesAutoresizingMaskIntoConstraints = false
+        curveView.onDisplayGainsChanged = { [weak self] gains in
+            guard let self else { return }
+            for (i, gain) in gains.enumerated() where i < self.sliders.count {
+                self.sliders[i].doubleValue = Double(gain)
+                // Show interpolated gain in label during animation
+                let g = gain
+                if g == 0 {
+                    self.gainLabels[i].stringValue = "0 dB"
+                } else if abs(g - Float(Int(g))) < 0.05 {
+                    self.gainLabels[i].stringValue = String(format: "%+d dB", Int(roundf(g)))
+                } else {
+                    self.gainLabels[i].stringValue = String(format: "%+.1f dB", g)
+                }
+            }
+        }
 
         bandsWrapper.addSubview(curveView)
         bandsWrapper.addSubview(slidersContainer)
@@ -1065,10 +1245,17 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         maxGainPicker.target = self
         maxGainPicker.action = #selector(maxGainChanged(_:))
 
+        autoScaleCheckbox = NSButton(checkboxWithTitle: "Auto",
+                                       target: self, action: #selector(toggleAutoScale(_:)))
+        let autoScaleOn = iQualizeState.load().autoScale
+        autoScaleCheckbox.state = autoScaleOn ? .on : .off
+        maxGainPicker.isEnabled = !autoScaleOn
+
         bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
+        bottomRow.addArrangedSubview(autoScaleCheckbox)
         bottomRow.addArrangedSubview(lowLatencyCheckbox)
         bottomRow.addArrangedSubview(clippingCheckbox)
 
@@ -1121,7 +1308,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
             gainLabels.append(gainLabel)
 
-            let maxDB = Double(audioEngine.maxGainDB)
+            let maxDB = Double(effectiveMaxGainDB)
             let slider = NSSlider(value: Double(band.gain), minValue: -maxDB, maxValue: maxDB,
                                   target: self, action: #selector(sliderMoved(_:)))
             slider.isVertical = true
@@ -1250,11 +1437,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             var frame = window.frame
             let newWidth = max(bandsWidth, window.minSize.width)
             frame.size.width = newWidth
-            window.setFrame(frame, display: true, animate: true)
+            window.setFrame(frame, display: true, animate: false)
         }
 
         curveView.referenceSlider = sliders.first
         curveView.allSliders = sliders
+        // Force layout so slider frames are valid before drawing the curve
+        window?.layoutIfNeeded()
         updateCurveView()
     }
 
@@ -1271,12 +1460,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
         clippingCheckbox.state = audioEngine.preventClipping ? .on : .off
         lowLatencyCheckbox.state = audioEngine.lowLatency ? .on : .off
+        let autoOn = iQualizeState.load().autoScale
+        autoScaleCheckbox.state = autoOn ? .on : .off
+        maxGainPicker.isEnabled = !autoOn
         updateWindowTitle()
         updateCurveView()
     }
 
     private func updateCurveView() {
-        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: audioEngine.maxGainDB, sampleRate: audioEngine.outputSampleRate)
+        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: effectiveMaxGainDB, sampleRate: audioEngine.outputSampleRate, autoScale: autoScaleCheckbox.state == .on)
     }
 
     private func populatePresetPicker() {
@@ -1439,6 +1631,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         buildSliders()
     }
 
+    @objc private func toggleAutoScale(_ sender: NSButton) {
+        let on = sender.state == .on
+        var state = iQualizeState.load()
+        state.autoScale = on
+        state.save()
+        maxGainPicker.isEnabled = !on
+        updateCurveView()
+    }
+
     @objc private func addBandAtIndex(_ sender: NSMenuItem) {
         guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
@@ -1573,7 +1774,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         if gainLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text) {
-                let maxDB = audioEngine.maxGainDB
+                let maxDB = effectiveMaxGainDB
                 let clamped = min(max(value, -maxDB), maxDB)
                 if clamped != band.gain {
                     let oldPreset = audioEngine.activePreset
