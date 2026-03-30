@@ -96,16 +96,17 @@ final class FrequencyResponseView: NSView {
         }
         let peakDb = compositeGains.max() ?? 0
         let valleyDb = compositeGains.min() ?? 0
+        var span = peakDb - valleyDb
+        if span < 2.0 { span = 2.0 }
 
-        // Use the largest absolute extreme so the range is always symmetric around 0 dB.
-        // This keeps the zero line aligned with the slider knobs.
-        var extreme = max(abs(peakDb), abs(valleyDb))
-        if extreme < 1.0 { extreme = 1.0 } // minimum ±1 dB so flat doesn't break
+        var displayMax = ceil(peakDb + span * 0.2)
+        var displayMin = floor(valleyDb - span * 0.2)
 
-        let padded = extreme * 1.2
-        let displayMax = ceil(padded)
+        // Ensure at least ±1 dB
+        if displayMax < 1.0 { displayMax = 1.0 }
+        if displayMin > -1.0 { displayMin = -1.0 }
 
-        return (min: -displayMax, max: displayMax)
+        return (min: displayMin, max: displayMax)
     }
 
     private func startAnimationIfNeeded() {
@@ -181,12 +182,6 @@ final class FrequencyResponseView: NSView {
         guard range > 0 else { return height / 2.0 }
         let norm = (Double(gain) - currentDisplayMin) / range
         return CGFloat(norm) * height
-    }
-
-    /// Fixed Y mapping using maxGainDB — for spline that must align with slider knobs.
-    private func fixedGainToY(_ gain: Float, height: CGFloat) -> CGFloat {
-        let norm = Double(gain) / Double(maxGainDB)
-        return height / 2.0 + CGFloat(norm) * (height / 2.0)
     }
 
     private func clampToDisplayRange(_ gain: Float) -> Float {
@@ -301,7 +296,7 @@ final class FrequencyResponseView: NSView {
             )
 
             let clamped = min(max(gain, -maxGainDB), maxGainDB)
-            let y = fixedGainToY(clamped, height: plotRect.height) + plotRect.minY
+            let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
             result.append(CGPoint(x: pixelX, y: y))
         }
         return result
@@ -557,7 +552,7 @@ final class FrequencyResponseView: NSView {
                 let gain = compositeGain(at: freq)
                 let clamped = min(max(gain, -maxGainDB), maxGainDB)
                 let x = CGFloat(t) * plotRect.width + plotRect.minX
-                let y = fixedGainToY(clamped, height: plotRect.height) + plotRect.minY
+                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
                 curvePoints.append(CGPoint(x: x, y: y))
             }
         }
