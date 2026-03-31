@@ -117,6 +117,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Peak Limiter toggle
 - Hide from Dock toggle — run as a menu bar-only app
+- Start at Login toggle — launch automatically when you log in
 - Current output device display
 - Open EQ window (Cmd+,)
 - About iQualize — shows version info

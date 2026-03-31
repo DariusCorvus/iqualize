@@ -2,6 +2,11 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.18.0] - 2026-03-31
+
+### Added
+- Start at Login toggle in menu bar — launch iQualize automatically when you log in, using macOS ServiceManagement (no helper app needed)
+
 ## [0.17.0] - 2026-03-30
 
 ### Changed
