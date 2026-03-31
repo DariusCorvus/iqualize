@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ServiceManagement
 
 @available(macOS 14.2, *)
 @MainActor
@@ -22,6 +23,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioEngine = AudioEngine()
         presetStore = PresetStore()
         menuBarController = MenuBarController(audioEngine: audioEngine, presetStore: presetStore)
+
+        // Sync login item state (user may have changed it in System Settings)
+        var launchState = iQualizeState.load()
+        let systemEnabled = SMAppService.mainApp.status == .enabled
+        if launchState.startAtLogin != systemEnabled {
+            launchState.startAtLogin = systemEnabled
+            launchState.save()
+        }
 
         // Sleep/wake handling
         NSWorkspace.shared.notificationCenter.addObserver(

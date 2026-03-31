@@ -13,6 +13,7 @@ struct iQualizeState: Codable {
     var preEqSpectrumEnabled: Bool
     var postEqSpectrumEnabled: Bool
     var hideFromDock: Bool
+    var startAtLogin: Bool
 
     static let defaultState = iQualizeState(
         isEnabled: false,
@@ -24,12 +25,13 @@ struct iQualizeState: Codable {
         autoScale: true,
         preEqSpectrumEnabled: false,
         postEqSpectrumEnabled: false,
-        hideFromDock: false
+        hideFromDock: false,
+        startAtLogin: false
     )
 
     private static let key = "com.iqualize.state"
 
-    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false) {
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.peakLimiter = peakLimiter
@@ -40,6 +42,7 @@ struct iQualizeState: Codable {
         self.preEqSpectrumEnabled = preEqSpectrumEnabled
         self.postEqSpectrumEnabled = postEqSpectrumEnabled
         self.hideFromDock = hideFromDock
+        self.startAtLogin = startAtLogin
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +57,7 @@ struct iQualizeState: Codable {
         preEqSpectrumEnabled = (try? container.decode(Bool.self, forKey: .preEqSpectrumEnabled)) ?? false
         postEqSpectrumEnabled = (try? container.decode(Bool.self, forKey: .postEqSpectrumEnabled)) ?? false
         hideFromDock = (try? container.decode(Bool.self, forKey: .hideFromDock)) ?? false
+        startAtLogin = (try? container.decode(Bool.self, forKey: .startAtLogin)) ?? false
     }
 
     static func load() -> iQualizeState {

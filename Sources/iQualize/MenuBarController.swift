@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 @available(macOS 14.2, *)
 @MainActor
@@ -112,6 +113,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         dockItem.state = state.hideFromDock ? .on : .off
         menu.addItem(dockItem)
 
+        // Start at Login toggle
+        let loginItem = NSMenuItem(title: "Start at Login",
+                                    action: #selector(toggleStartAtLogin(_:)), keyEquivalent: "")
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(loginItem)
 
         menu.addItem(.separator())
 
@@ -196,6 +203,23 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     @objc private func toggleClipping(_ sender: NSMenuItem) {
         audioEngine.peakLimiter.toggle()
         state.peakLimiter = audioEngine.peakLimiter
+        state.save()
+    }
+
+    @objc private func toggleStartAtLogin(_ sender: NSMenuItem) {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to update login item"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        state.startAtLogin = SMAppService.mainApp.status == .enabled
         state.save()
     }
 
