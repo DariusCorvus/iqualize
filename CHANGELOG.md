@@ -2,6 +2,12 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.19.0] - 2026-04-01
+
+### Added
+- Stereo balance control — L/R balance slider in the bottom bar with snap-to-center and double-click reset
+- Balance persists across app restarts
+
 ## [0.18.0] - 2026-03-31
 
 ### Added
