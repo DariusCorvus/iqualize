@@ -37,6 +37,13 @@ enum FilterType: String, Codable, CaseIterable, Equatable, Sendable {
     }
 }
 
+// MARK: - EQ Channel
+
+enum EQChannel: String, Codable, Sendable {
+    case left
+    case right
+}
+
 // MARK: - EQ Band
 
 struct EQBand: Codable, Equatable, Sendable {
@@ -67,10 +74,42 @@ struct EQPresetData: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     var name: String
     var bands: [EQBand]
+    /// Right channel bands. When nil, the preset is in linked (stereo) mode.
+    /// When non-nil, `bands` represents the left channel and `rightBands` the right.
+    var rightBands: [EQBand]?
     let isBuiltIn: Bool
 
     var isFlat: Bool {
-        bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
+        let bandsFlat = bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
+        guard let right = rightBands else { return bandsFlat }
+        return bandsFlat && right.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }
+    }
+
+    var isSplitChannel: Bool { rightBands != nil }
+
+    func bands(for channel: EQChannel) -> [EQBand] {
+        switch channel {
+        case .left: return bands
+        case .right: return rightBands ?? bands
+        }
+    }
+
+    mutating func setBands(_ newBands: [EQBand], for channel: EQChannel) {
+        switch channel {
+        case .left: bands = newBands
+        case .right: rightBands = newBands
+        }
+    }
+
+    /// Enable split channel mode by copying current bands to right channel.
+    mutating func enableSplitChannel() {
+        guard rightBands == nil else { return }
+        rightBands = bands
+    }
+
+    /// Disable split channel mode, keeping left channel bands.
+    mutating func disableSplitChannel() {
+        rightBands = nil
     }
 }
 
