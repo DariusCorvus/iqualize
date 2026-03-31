@@ -69,6 +69,8 @@ final class ClickThroughView: NSView {
 @MainActor
 final class FrequencyResponseView: NSView {
     private var bands: [EQBand] = []
+    /// Bands for the inactive channel in split mode (nil when in linked mode).
+    private var inactiveBands: [EQBand]?
     private var maxGainDB: Float = 12
     private var sampleRate: Double = 48000
     private var autoScale: Bool = true
@@ -117,7 +119,8 @@ final class FrequencyResponseView: NSView {
     /// All band sliders — used to compute column center X at draw time.
     var allSliders: [NSSlider] = []
 
-    func updateBands(_ bands: [EQBand], maxGainDB: Float, sampleRate: Double, autoScale: Bool) {
+    func updateBands(_ bands: [EQBand], rightBands: [EQBand]? = nil, maxGainDB: Float, sampleRate: Double, autoScale: Bool) {
+        self.inactiveBands = rightBands
         let targetGains = bands.map { $0.gain }
 
         // Resize displayGains to match new band count, lerping instead of snapping
@@ -727,6 +730,33 @@ final class FrequencyResponseView: NSView {
             ctx.strokePath()
         }
 
+        // ── 5b. Inactive channel curve (split mode only) ──
+
+        if let inactiveBands, !inactiveBands.isEmpty {
+            let inactiveGains = BiquadResponse.compositeResponse(
+                bands: inactiveBands, sampleRate: sampleRate, frequencies: frequencies
+            )
+            let inactivePts: [CGPoint] = zip(frequencies, inactiveGains).map { freq, gain in
+                let t = log10(freq / 20.0) / 3.0
+                let clamped = clampToDisplayRange(Float(gain))
+                let x = CGFloat(t) * plotRect.width + plotRect.minX
+                let y = gainToY(clamped, height: plotRect.height) + plotRect.minY
+                return CGPoint(x: x, y: y)
+            }
+
+            if !inactivePts.isEmpty {
+                let inactivePath = CGMutablePath()
+                inactivePath.move(to: inactivePts[0])
+                for pt in inactivePts.dropFirst() { inactivePath.addLine(to: pt) }
+                ctx.setStrokeColor(NSColor.systemOrange.withAlphaComponent(0.30).cgColor)
+                ctx.setLineWidth(1.0)
+                ctx.setLineDash(phase: 0, lengths: [3, 2])
+                ctx.addPath(inactivePath)
+                ctx.strokePath()
+                ctx.setLineDash(phase: 0, lengths: [])
+            }
+        }
+
         // ── 6. Anchor dots ──
 
         if isBackdrop {
@@ -1210,6 +1240,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var postEqSpectrumCheckbox: NSButton!
     private var balanceSlider: NSSlider!
     private var balanceValueLabel: NSTextField!
+    private var channelSegment: NSSegmentedControl!
+    private var activeChannel: EQChannel = .left
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
         (autoScaleCheckbox?.state == .on) ? 24 : audioEngine.maxGainDB
@@ -1266,7 +1298,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             guard let self else { return false }
             if self.window?.firstResponder is NSTextView { return false }
 
-            let bands = self.audioEngine.activePreset.bands
+            let bands = self.activeBands
             guard !bands.isEmpty else { return false }
 
             switch event.keyCode {
@@ -1578,6 +1610,23 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         balanceSeparator.boxType = .separator
         balanceSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
 
+        // Channel mode segmented control: Linked / L / R
+        channelSegment = NSSegmentedControl(labels: ["Linked", "L", "R"], trackingMode: .selectOne,
+                                            target: self, action: #selector(channelSegmentChanged(_:)))
+        channelSegment.controlSize = .small
+        channelSegment.font = .systemFont(ofSize: 10)
+        if savedState.splitChannelEnabled {
+            activeChannel = EQChannel(rawValue: savedState.activeChannel ?? "left") ?? .left
+            channelSegment.selectedSegment = activeChannel == .right ? 2 : 1
+            audioEngine.splitChannelActive = true
+        } else {
+            channelSegment.selectedSegment = 0
+        }
+
+        let channelSeparator = NSBox()
+        channelSeparator.boxType = .separator
+        channelSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
         bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
@@ -1586,6 +1635,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(balanceSlider)
         bottomRow.addArrangedSubview(balanceLabelR)
         bottomRow.addArrangedSubview(balanceValueLabel)
+        bottomRow.addArrangedSubview(channelSeparator)
+        bottomRow.addArrangedSubview(channelSegment)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
@@ -1619,7 +1670,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         qLabels.removeAll()
         filterTypePickers.removeAll()
 
-        let bands = audioEngine.activePreset.bands
+        let bands = activeBands
         let canAdd = bands.count < EQPresetData.maxBandCount
 
         for (i, band) in bands.enumerated() {
@@ -1639,9 +1690,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             gainLabel.setContentHuggingPriority(.required, for: .vertical)
             gainLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             gainLabel.onFocus = { [weak self] in
-                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                guard let self, i < self.activeBands.count else { return }
                 self.selectBand(nil)
-                gainLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].gain)
+                gainLabel.stringValue = Self.formatRawFloat(self.activeBands[i].gain)
             }
             gainLabel.onScroll = { [weak self] direction in
                 self?.scrollAdjustGain(at: i, direction: direction)
@@ -1673,9 +1724,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             freqLabel.setContentHuggingPriority(.required, for: .vertical)
             freqLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             freqLabel.onFocus = { [weak self] in
-                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                guard let self, i < self.activeBands.count else { return }
                 self.selectBand(nil)
-                freqLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].frequency)
+                freqLabel.stringValue = Self.formatRawFloat(self.activeBands[i].frequency)
             }
             freqLabel.onScroll = { [weak self] direction in
                 self?.scrollAdjustFrequency(at: i, direction: direction)
@@ -1692,9 +1743,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             qLabel.setContentHuggingPriority(.required, for: .vertical)
             qLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
             qLabel.onFocus = { [weak self] in
-                guard let self, i < self.audioEngine.activePreset.bands.count else { return }
+                guard let self, i < self.activeBands.count else { return }
                 self.selectBand(nil)
-                qLabel.stringValue = Self.formatRawFloat(self.audioEngine.activePreset.bands[i].bandwidth)
+                qLabel.stringValue = Self.formatRawFloat(self.activeBands[i].bandwidth)
             }
             qLabel.onScroll = { [weak self] direction in
                 self?.scrollAdjustBandwidth(at: i, direction: direction)
@@ -1821,6 +1872,21 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         isModified = false
         resetButton.isEnabled = false
         populatePresetPicker()
+
+        // Sync split channel state to match the loaded preset
+        if audioEngine.activePreset.isSplitChannel {
+            if !audioEngine.splitChannelActive {
+                audioEngine.splitChannelActive = true
+            }
+            channelSegment.selectedSegment = activeChannel == .right ? 2 : 1
+        } else {
+            if audioEngine.splitChannelActive {
+                audioEngine.splitChannelActive = false
+            }
+            activeChannel = .left
+            channelSegment.selectedSegment = 0
+        }
+
         buildSliders()
         updateDeleteButton()
         updateOutputLabel()
@@ -1836,7 +1902,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func updateCurveView() {
-        curveView.updateBands(audioEngine.activePreset.bands, maxGainDB: effectiveMaxGainDB, sampleRate: audioEngine.outputSampleRate, autoScale: autoScaleCheckbox.state == .on)
+        let preset = audioEngine.activePreset
+        curveView.updateBands(
+            activeBands,
+            rightBands: preset.isSplitChannel ? preset.bands(for: activeChannel == .left ? .right : .left) : nil,
+            maxGainDB: effectiveMaxGainDB,
+            sampleRate: audioEngine.outputSampleRate,
+            autoScale: autoScaleCheckbox.state == .on
+        )
     }
 
     private func populatePresetPicker() {
@@ -1898,6 +1971,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             id: UUID(),
             name: forkName,
             bands: audioEngine.activePreset.bands,
+            rightBands: audioEngine.activePreset.rightBands,
             isBuiltIn: false
         )
         audioEngine.activePreset = custom
@@ -1990,7 +2064,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func moveBandSelection(forward: Bool) {
-        let count = audioEngine.activePreset.bands.count
+        let count = activeBands.count
         guard count > 0 else { return }
 
         let newIndex: Int
@@ -2026,37 +2100,33 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func adjustGainViaKeyboard(delta: Float) {
         guard let index = selectedBandIndex,
-              index < audioEngine.activePreset.bands.count else { return }
+              index < activeBands.count else { return }
         beginKeyboardAdjustIfNeeded()
         forkIfBuiltIn()
 
-        var preset = audioEngine.activePreset
-        let maxDB = audioEngine.maxGainDB
-        let newGain = min(max(preset.bands[index].gain + delta, -maxDB), maxDB)
-        guard newGain != preset.bands[index].gain else { return }
+        let maxDB = effectiveMaxGainDB
+        let newGain = min(max(activeBands[index].gain + delta, -maxDB), maxDB)
+        guard newGain != activeBands[index].gain else { return }
 
-        preset.bands[index].gain = newGain
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in bands[index].gain = newGain }
         sliders[index].doubleValue = Double(newGain)
-        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        gainLabels[index].stringValue = activeBands[index].gainLabel
         markModified()
         updateCurveView()
     }
 
     private func adjustFrequencyViaKeyboard(up: Bool) {
         guard let index = selectedBandIndex,
-              index < audioEngine.activePreset.bands.count else { return }
+              index < activeBands.count else { return }
         beginKeyboardAdjustIfNeeded()
         forkIfBuiltIn()
 
-        var preset = audioEngine.activePreset
         let semitone: Float = pow(2.0, 1.0 / 12.0)
         let factor = up ? semitone : (1.0 / semitone)
-        let newFreq = min(max(preset.bands[index].frequency * factor, 20), 20000)
+        let newFreq = min(max(activeBands[index].frequency * factor, 20), 20000)
 
-        preset.bands[index].frequency = newFreq
-        audioEngine.activePreset = preset
-        freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        modifyActivePresetBands { bands in bands[index].frequency = newFreq }
+        freqLabels[index].stringValue = activeBands[index].frequencyLabel
         markModified()
         updateCurveView()
     }
@@ -2064,54 +2134,48 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - Scroll Wheel Adjustments
 
     private func scrollAdjustGain(at index: Int, direction: CGFloat) {
-        guard index < audioEngine.activePreset.bands.count else { return }
+        guard index < activeBands.count else { return }
         beginKeyboardAdjustIfNeeded()
         forkIfBuiltIn()
 
-        var preset = audioEngine.activePreset
-        let maxDB = audioEngine.maxGainDB
+        let maxDB = effectiveMaxGainDB
         let delta: Float = direction > 0 ? 0.5 : -0.5
-        let newGain = min(max(preset.bands[index].gain + delta, -maxDB), maxDB)
-        guard newGain != preset.bands[index].gain else { return }
+        let newGain = min(max(activeBands[index].gain + delta, -maxDB), maxDB)
+        guard newGain != activeBands[index].gain else { return }
 
-        preset.bands[index].gain = newGain
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in bands[index].gain = newGain }
         sliders[index].doubleValue = Double(newGain)
-        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        gainLabels[index].stringValue = activeBands[index].gainLabel
         markModified()
         updateCurveView()
     }
 
     private func scrollAdjustFrequency(at index: Int, direction: CGFloat) {
-        guard index < audioEngine.activePreset.bands.count else { return }
+        guard index < activeBands.count else { return }
         beginKeyboardAdjustIfNeeded()
         forkIfBuiltIn()
 
-        var preset = audioEngine.activePreset
         let semitone: Float = pow(2.0, 1.0 / 12.0)
         let factor = direction > 0 ? semitone : (1.0 / semitone)
-        let newFreq = min(max(preset.bands[index].frequency * factor, 20), 20000)
+        let newFreq = min(max(activeBands[index].frequency * factor, 20), 20000)
 
-        preset.bands[index].frequency = newFreq
-        audioEngine.activePreset = preset
-        freqLabels[index].stringValue = preset.bands[index].frequencyLabel
+        modifyActivePresetBands { bands in bands[index].frequency = newFreq }
+        freqLabels[index].stringValue = activeBands[index].frequencyLabel
         markModified()
         updateCurveView()
     }
 
     private func scrollAdjustBandwidth(at index: Int, direction: CGFloat) {
-        guard index < audioEngine.activePreset.bands.count else { return }
+        guard index < activeBands.count else { return }
         beginKeyboardAdjustIfNeeded()
         forkIfBuiltIn()
 
-        var preset = audioEngine.activePreset
         let delta: Float = direction > 0 ? 0.1 : -0.1
-        let newQ = min(max(preset.bands[index].bandwidth + delta, 0.1), 10)
-        guard newQ != preset.bands[index].bandwidth else { return }
+        let newQ = min(max(activeBands[index].bandwidth + delta, 0.1), 10)
+        guard newQ != activeBands[index].bandwidth else { return }
 
-        preset.bands[index].bandwidth = newQ
-        audioEngine.activePreset = preset
-        qLabels[index].stringValue = preset.bands[index].bandwidthLabel
+        modifyActivePresetBands { bands in bands[index].bandwidth = newQ }
+        qLabels[index].stringValue = activeBands[index].bandwidthLabel
         markModified()
         updateCurveView()
     }
@@ -2145,6 +2209,88 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         } else {
             balanceValueLabel.stringValue = "\(Int(value * 100))R"
         }
+    }
+
+    // MARK: - Split Channel Helpers
+
+    /// The bands for the currently active channel (or left/only bands in linked mode).
+    private var activeBands: [EQBand] {
+        audioEngine.activePreset.bands(for: activeChannel)
+    }
+
+    /// Modify the active channel's band at the given index in-place.
+    private func modifyActivePresetBands(_ transform: (inout [EQBand]) -> Void) {
+        var preset = audioEngine.activePreset
+        var bands = preset.bands(for: activeChannel)
+        transform(&bands)
+        preset.setBands(bands, for: activeChannel)
+        audioEngine.activePreset = preset
+    }
+
+    @objc private func channelSegmentChanged(_ sender: NSSegmentedControl) {
+        let oldPreset = audioEngine.activePreset
+        var state = iQualizeState.load()
+
+        switch sender.selectedSegment {
+        case 0: // Linked
+            if audioEngine.activePreset.isSplitChannel {
+                let preset = audioEngine.activePreset
+                let leftBands = preset.bands(for: .left)
+                let rightBands = preset.bands(for: .right)
+
+                if leftBands != rightBands {
+                    let alert = NSAlert()
+                    alert.messageText = "Merge to Linked Mode?"
+                    alert.informativeText = "The right channel has different EQ settings. Switching to Linked will keep only the left channel's bands."
+                    alert.addButton(withTitle: "Reset to Left")
+                    alert.addButton(withTitle: "Cancel")
+                    alert.alertStyle = .warning
+
+                    let response = alert.runModal()
+                    if response == .alertSecondButtonReturn {
+                        // Revert segmented control to previous selection
+                        sender.selectedSegment = activeChannel == .right ? 2 : 1
+                        return
+                    }
+                }
+
+                var mutablePreset = preset
+                mutablePreset.disableSplitChannel()
+                audioEngine.activePreset = mutablePreset
+                audioEngine.splitChannelActive = false
+            }
+            activeChannel = .left
+            state.splitChannelEnabled = false
+            state.activeChannel = nil
+        case 1: // L
+            activeChannel = .left
+            if !audioEngine.activePreset.isSplitChannel {
+                var preset = audioEngine.activePreset
+                preset.enableSplitChannel()
+                audioEngine.activePreset = preset
+                audioEngine.splitChannelActive = true
+            }
+            state.splitChannelEnabled = true
+            state.activeChannel = EQChannel.left.rawValue
+        case 2: // R
+            activeChannel = .right
+            if !audioEngine.activePreset.isSplitChannel {
+                var preset = audioEngine.activePreset
+                preset.enableSplitChannel()
+                audioEngine.activePreset = preset
+                audioEngine.splitChannelActive = true
+            }
+            state.splitChannelEnabled = true
+            state.activeChannel = EQChannel.right.rawValue
+        default:
+            break
+        }
+
+        state.save()
+        buildSliders()
+        updateCurveView()
+        markModified()
+        registerUndo("Change Channel Mode", oldPreset: oldPreset)
     }
 
     @objc private func toggleBypass(_ sender: NSButton) {
@@ -2198,26 +2344,23 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func addBandAtIndex(_ sender: NSMenuItem) {
-        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        guard activeBands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
 
         let insertionIndex: Int
         if sender.tag >= 0 {
-            // "Add Band to Left" — insert at this index
             insertionIndex = sender.tag
         } else {
-            // "Add Band to Right" — negative tag encodes -(originalIndex + 1), insert after
             insertionIndex = (-sender.tag - 1) + 1
         }
 
-        let clampedIndex = min(insertionIndex, preset.bands.count)
-        // Use the band the user clicked as the reference (for "right", look back one index)
-        let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
-        let reference = refIndex < preset.bands.count ? preset.bands[refIndex] : (preset.bands.last ?? EQBand(frequency: 1000, gain: 0))
-        preset.bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth, filterType: reference.filterType), at: clampedIndex)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in
+            let clampedIndex = min(insertionIndex, bands.count)
+            let refIndex = sender.tag >= 0 ? clampedIndex : max(0, clampedIndex - 1)
+            let reference = refIndex < bands.count ? bands[refIndex] : (bands.last ?? EQBand(frequency: 1000, gain: 0))
+            bands.insert(EQBand(frequency: reference.frequency, gain: reference.gain, bandwidth: reference.bandwidth, filterType: reference.filterType), at: clampedIndex)
+        }
         buildSliders()
         markModified()
         registerUndo("Add Band", oldPreset: oldPreset)
@@ -2225,14 +2368,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func reorderBand(from: Int, to: Int) {
         guard from != to,
-              from < audioEngine.activePreset.bands.count,
-              to <= audioEngine.activePreset.bands.count else { return }
+              from < activeBands.count,
+              to <= activeBands.count else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        let band = preset.bands.remove(at: from)
-        preset.bands.insert(band, at: to)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in
+            let band = bands.remove(at: from)
+            bands.insert(band, at: to)
+        }
         buildSliders()
         markModified()
         registerUndo("Reorder Band", oldPreset: oldPreset)
@@ -2240,12 +2383,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func moveBandLeft(_ sender: NSMenuItem) {
         let index = sender.tag
-        guard index > 0, index < audioEngine.activePreset.bands.count else { return }
+        guard index > 0, index < activeBands.count else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        preset.bands.swapAt(index, index - 1)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in bands.swapAt(index, index - 1) }
         buildSliders()
         markModified()
         registerUndo("Move Band Left", oldPreset: oldPreset)
@@ -2253,12 +2394,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func moveBandRight(_ sender: NSMenuItem) {
         let index = sender.tag
-        guard index < audioEngine.activePreset.bands.count - 1 else { return }
+        guard index < activeBands.count - 1 else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        preset.bands.swapAt(index, index + 1)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in bands.swapAt(index, index + 1) }
         buildSliders()
         markModified()
         registerUndo("Move Band Right", oldPreset: oldPreset)
@@ -2266,10 +2405,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func deleteBandFromMenu(_ sender: NSMenuItem) {
         let index = sender.tag
-        guard index < audioEngine.activePreset.bands.count,
-              audioEngine.activePreset.bands.count > EQPresetData.minBandCount else { return }
+        guard index < activeBands.count,
+              activeBands.count > EQPresetData.minBandCount else { return }
 
-        let band = audioEngine.activePreset.bands[index]
+        let band = activeBands[index]
         let alert = NSAlert()
         alert.messageText = "Delete Band?"
         alert.informativeText = "Remove the \(band.frequencyLabel) band at \(band.gainLabel)?"
@@ -2281,50 +2420,61 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        preset.bands.remove(at: index)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in bands.remove(at: index) }
         buildSliders()
         markModified()
         registerUndo("Delete Band", oldPreset: oldPreset)
     }
 
     @objc private func addBandLeft(_ sender: Any) {
-        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        guard activeBands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        let leftmost = preset.bands.first ?? EQBand(frequency: 100, gain: 0)
-        preset.bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth, filterType: leftmost.filterType), at: 0)
-        audioEngine.activePreset = preset
+        let leftmost = activeBands.first ?? EQBand(frequency: 100, gain: 0)
+        modifyActivePresetBands { bands in
+            bands.insert(EQBand(frequency: leftmost.frequency, gain: leftmost.gain, bandwidth: leftmost.bandwidth, filterType: leftmost.filterType), at: 0)
+        }
         buildSliders()
         markModified()
         registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     @objc private func addBandRight(_ sender: Any) {
-        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        guard activeBands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        let rightmost = preset.bands.last ?? EQBand(frequency: 1000, gain: 0)
-        preset.bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth, filterType: rightmost.filterType))
-        audioEngine.activePreset = preset
+        let rightmost = activeBands.last ?? EQBand(frequency: 1000, gain: 0)
+        modifyActivePresetBands { bands in
+            bands.append(EQBand(frequency: rightmost.frequency, gain: rightmost.gain, bandwidth: rightmost.bandwidth, filterType: rightmost.filterType))
+        }
         buildSliders()
         markModified()
         registerUndo("Add Band", oldPreset: oldPreset)
     }
 
     @objc private func addSuggestedBand(_ sender: NSMenuItem) {
-        guard audioEngine.activePreset.bands.count < EQPresetData.maxBandCount else { return }
+        guard activeBands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        let freq = preset.suggestNewBandFrequency()
-        let newBand = EQBand(frequency: freq, gain: 0, bandwidth: 1.0)
-        let insertIndex = preset.bands.firstIndex(where: { $0.frequency > freq }) ?? preset.bands.count
-        preset.bands.insert(newBand, at: insertIndex)
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in
+            // Find the largest frequency gap in the active channel's bands
+            let sorted = bands.map(\.frequency).sorted()
+            var bestFreq: Float = 1000
+            var bestGap: Float = 0
+            if !sorted.isEmpty {
+                bestFreq = sorted[0] / 2; bestGap = log2(sorted[0] / 20)
+                for i in 1..<sorted.count {
+                    let gap = log2(sorted[i] / sorted[i - 1])
+                    if gap > bestGap { bestGap = gap; bestFreq = sqrt(sorted[i] * sorted[i - 1]) }
+                }
+                let topGap = log2(20000 / sorted.last!)
+                if topGap > bestGap { bestFreq = sorted.last! * 2 }
+                bestFreq = min(max(bestFreq, 20), 20000)
+            }
+            let newBand = EQBand(frequency: bestFreq, gain: 0, bandwidth: 1.0)
+            let insertIndex = bands.firstIndex(where: { $0.frequency > bestFreq }) ?? bands.count
+            bands.insert(newBand, at: insertIndex)
+        }
         buildSliders()
         markModified()
         registerUndo("Add Band", oldPreset: oldPreset)
@@ -2339,9 +2489,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard let field = notification.object as? UnitTextField else { return }
         let index = field.tag
-        guard index < audioEngine.activePreset.bands.count else { return }
+        guard index < activeBands.count else { return }
 
-        let band = audioEngine.activePreset.bands[index]
+        let band = activeBands[index]
 
         if gainLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
@@ -2351,15 +2501,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 if clamped != band.gain {
                     let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
-                    var preset = audioEngine.activePreset
-                    preset.bands[index].gain = clamped
-                    audioEngine.activePreset = preset
+                    modifyActivePresetBands { bands in bands[index].gain = clamped }
                     sliders[index].doubleValue = Double(clamped)
                     markModified()
                     registerUndo("Change Gain", oldPreset: oldPreset)
                 }
             }
-            field.stringValue = audioEngine.activePreset.bands[index].gainLabel
+            field.stringValue = activeBands[index].gainLabel
         } else if freqLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text) {
@@ -2367,14 +2515,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 if clamped != band.frequency {
                     let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
-                    var preset = audioEngine.activePreset
-                    preset.bands[index].frequency = clamped
-                    audioEngine.activePreset = preset
+                    modifyActivePresetBands { bands in bands[index].frequency = clamped }
                     markModified()
                     registerUndo("Change Frequency", oldPreset: oldPreset)
                 }
             }
-            field.stringValue = audioEngine.activePreset.bands[index].frequencyLabel
+            field.stringValue = activeBands[index].frequencyLabel
         } else if qLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text), value > 0 {
@@ -2382,14 +2528,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                 if clamped != band.bandwidth {
                     let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
-                    var preset = audioEngine.activePreset
-                    preset.bands[index].bandwidth = clamped
-                    audioEngine.activePreset = preset
+                    modifyActivePresetBands { bands in bands[index].bandwidth = clamped }
                     markModified()
                     registerUndo("Change Bandwidth", oldPreset: oldPreset)
                 }
             }
-            field.stringValue = audioEngine.activePreset.bands[index].bandwidthLabel
+            field.stringValue = activeBands[index].bandwidthLabel
         }
         updateCurveView()
     }
@@ -2400,17 +2544,30 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
               let preset = presetStore.preset(for: id) else { return }
         audioEngine.activePreset = preset
         savedPresetSnapshot = preset
+
+        // Sync split channel state to match the loaded preset
+        if preset.isSplitChannel {
+            audioEngine.splitChannelActive = true
+            if activeChannel != .left && activeChannel != .right { activeChannel = .left }
+            channelSegment.selectedSegment = activeChannel == .right ? 2 : 1
+        } else {
+            audioEngine.splitChannelActive = false
+            activeChannel = .left
+            channelSegment.selectedSegment = 0
+        }
+
         buildSliders()
         updateDeleteButton()
         isModified = false
         resetButton.isEnabled = false
         updateWindowTitle()
+        updateCurveView()
         saveState()
     }
 
     @objc private func sliderMoved(_ sender: NSSlider) {
         let index = sender.tag
-        guard index < audioEngine.activePreset.bands.count else { return }
+        guard index < activeBands.count else { return }
 
         // Snapshot at drag start for coalesced undo
         if sliderDragSnapshot == nil {
@@ -2418,13 +2575,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         }
 
         forkIfBuiltIn()
-        let gain = Float(sender.doubleValue)
+        let maxDB = effectiveMaxGainDB
+        let gain = min(max(Float(sender.doubleValue), -maxDB), maxDB)
 
-        var preset = audioEngine.activePreset
-        preset.bands[index].gain = gain
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in
+            bands[index].gain = gain
+        }
 
-        gainLabels[index].stringValue = preset.bands[index].gainLabel
+        gainLabels[index].stringValue = activeBands[index].gainLabel
         updateCurveView()
         markModified()
 
@@ -2438,17 +2596,17 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func filterTypeChanged(_ sender: NSPopUpButton) {
         let index = sender.tag
-        guard index < audioEngine.activePreset.bands.count,
+        guard index < activeBands.count,
               let selectedType = sender.selectedItem?.representedObject as? FilterType else { return }
 
-        let band = audioEngine.activePreset.bands[index]
+        let band = activeBands[index]
         guard selectedType != band.filterType else { return }
 
         let oldPreset = audioEngine.activePreset
         forkIfBuiltIn()
-        var preset = audioEngine.activePreset
-        preset.bands[index].filterType = selectedType
-        audioEngine.activePreset = preset
+        modifyActivePresetBands { bands in
+            bands[index].filterType = selectedType
+        }
         updateCurveView()
         markModified()
         registerUndo("Change Filter Type", oldPreset: oldPreset)
@@ -2534,6 +2692,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             id: UUID(),
             name: name,
             bands: audioEngine.activePreset.bands,
+            rightBands: audioEngine.activePreset.rightBands,
             isBuiltIn: false
         )
         presetStore.saveCustomPreset(newPreset)
@@ -2670,7 +2829,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                     presetStore.deleteCustomPreset(id: existing.id)
                 }
 
-                let preset = EQPresetData(id: UUID(), name: importName, bands: decoded.bands, isBuiltIn: false)
+                let preset = EQPresetData(id: UUID(), name: importName, bands: decoded.bands, rightBands: decoded.rightBands, isBuiltIn: false)
                 presetStore.saveCustomPreset(preset)
                 lastImported = preset
                 importCount += 1
