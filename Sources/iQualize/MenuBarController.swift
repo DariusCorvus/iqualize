@@ -34,6 +34,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         audioEngine.peakLimiter = state.peakLimiter
         audioEngine.maxGainDB = state.maxGainDB
         audioEngine.bypassed = state.bypassed
+        audioEngine.balance = state.balance
         audioEngine.setEnabled(true)
         updateIcon()
 

@@ -1208,6 +1208,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var autoScaleCheckbox: NSButton!
     private var preEqSpectrumCheckbox: NSButton!
     private var postEqSpectrumCheckbox: NSButton!
+    private var balanceSlider: NSSlider!
+    private var balanceValueLabel: NSTextField!
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
         (autoScaleCheckbox?.state == .on) ? 24 : audioEngine.maxGainDB
@@ -1547,9 +1549,43 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             curveView.startAnimationIfNeeded()
         }
 
+        // Balance slider
+        let balanceLabelL = NSTextField(labelWithString: "L")
+        balanceLabelL.font = .systemFont(ofSize: 10)
+        balanceLabelL.textColor = .secondaryLabelColor
+
+        balanceSlider = NSSlider(value: Double(savedState.balance), minValue: -1.0, maxValue: 1.0,
+                                 target: self, action: #selector(balanceChanged(_:)))
+        balanceSlider.isContinuous = true
+        balanceSlider.widthAnchor.constraint(equalToConstant: 80).isActive = true
+
+        let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(resetBalance(_:)))
+        doubleClick.numberOfClicksRequired = 2
+        balanceSlider.addGestureRecognizer(doubleClick)
+
+        let balanceLabelR = NSTextField(labelWithString: "R")
+        balanceLabelR.font = .systemFont(ofSize: 10)
+        balanceLabelR.textColor = .secondaryLabelColor
+
+        balanceValueLabel = NSTextField(labelWithString: "C")
+        balanceValueLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        balanceValueLabel.textColor = .secondaryLabelColor
+        balanceValueLabel.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        balanceValueLabel.alignment = .center
+        updateBalanceLabel(savedState.balance)
+
+        let balanceSeparator = NSBox()
+        balanceSeparator.boxType = .separator
+        balanceSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
         bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
+        bottomRow.addArrangedSubview(balanceSeparator)
+        bottomRow.addArrangedSubview(balanceLabelL)
+        bottomRow.addArrangedSubview(balanceSlider)
+        bottomRow.addArrangedSubview(balanceLabelR)
+        bottomRow.addArrangedSubview(balanceValueLabel)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
@@ -1790,6 +1826,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         updateOutputLabel()
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
         clippingCheckbox.state = audioEngine.peakLimiter ? .on : .off
+        balanceSlider.doubleValue = Double(audioEngine.balance)
+        updateBalanceLabel(audioEngine.balance)
         let autoOn = iQualizeState.load().autoScale
         autoScaleCheckbox.state = autoOn ? .on : .off
         maxGainPicker.isEnabled = !autoOn
@@ -2079,6 +2117,35 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     // MARK: - Actions
+
+    @objc private func resetBalance(_ sender: NSClickGestureRecognizer) {
+        balanceSlider.doubleValue = 0
+        audioEngine.balance = 0
+        updateBalanceLabel(0)
+        var state = iQualizeState.load()
+        state.balance = 0
+        state.save()
+    }
+
+    @objc private func balanceChanged(_ sender: NSSlider) {
+        var value = Float(sender.doubleValue)
+        if abs(value) < 0.05 { value = 0; sender.doubleValue = 0 }
+        audioEngine.balance = value
+        updateBalanceLabel(value)
+        var state = iQualizeState.load()
+        state.balance = value
+        state.save()
+    }
+
+    private func updateBalanceLabel(_ value: Float) {
+        if abs(value) < 0.01 {
+            balanceValueLabel.stringValue = "C"
+        } else if value < 0 {
+            balanceValueLabel.stringValue = "\(Int(-value * 100))L"
+        } else {
+            balanceValueLabel.stringValue = "\(Int(value * 100))R"
+        }
+    }
 
     @objc private func toggleBypass(_ sender: NSButton) {
         audioEngine.bypassed = sender.state == .on

@@ -18,6 +18,8 @@ nonisolated(unsafe) private var rtChannelCount: UInt32 = 2
 /// Scratch buffer for deinterleaving (allocated once, reused).
 nonisolated(unsafe) private var rtScratchBuffer: UnsafeMutablePointer<Float>?
 nonisolated(unsafe) private var rtScratchCapacity: Int = 0
+nonisolated(unsafe) private var rtBalanceLeft: Float = 1.0
+nonisolated(unsafe) private var rtBalanceRight: Float = 1.0
 
 /// AVAudioSourceNode render block: pulls interleaved audio from ring buffer,
 /// deinterleaves into separate channel buffers for the non-interleaved AVAudioEngine format.
@@ -48,8 +50,9 @@ private func renderCallback(
     for i in 0..<bufferList.count {
         guard let outData = bufferList[i].mData?.assumingMemoryBound(to: Float.self) else { continue }
         let channelIndex = i
+        let gain = channelIndex == 0 ? rtBalanceLeft : rtBalanceRight
         for f in 0..<frames {
-            outData[f] = scratch[f * ch + channelIndex]
+            outData[f] = scratch[f * ch + channelIndex] * gain
         }
     }
     return noErr
@@ -95,6 +98,13 @@ final class AudioEngine {
 
     var bypassed: Bool = false {
         didSet { applyBands() }
+    }
+
+    var balance: Float = 0.0 {
+        didSet {
+            rtBalanceLeft = balance <= 0 ? 1.0 : 1.0 - balance
+            rtBalanceRight = balance >= 0 ? 1.0 : 1.0 + balance
+        }
     }
 
     var maxGainDB: Float = 12
