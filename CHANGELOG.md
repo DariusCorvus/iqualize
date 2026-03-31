@@ -8,6 +8,9 @@ All notable changes to iQualize will be documented in this file.
 - Stereo balance control — L/R balance slider in the bottom bar with snap-to-center and double-click reset
 - Balance persists across app restarts
 
+### Fixed
+- Menu bar actions (toggle bypass, open/close window, switch preset) no longer overwrite settings saved by the EQ window
+
 ## [0.18.0] - 2026-03-31
 
 ### Added
