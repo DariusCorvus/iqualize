@@ -7,14 +7,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let audioEngine: AudioEngine
     private let presetStore: PresetStore
-    private var state: iQualizeState
     private var eqWindowController: EQWindowController?
 
     init(audioEngine: AudioEngine, presetStore: PresetStore) {
         self.audioEngine = audioEngine
         self.presetStore = presetStore
-        self.state = iQualizeState.load()
         super.init()
+        let state = iQualizeState.load()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
@@ -111,7 +110,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         let dockItem = NSMenuItem(title: "Hide from Dock",
                                    action: #selector(toggleHideFromDock(_:)), keyEquivalent: "")
         dockItem.target = self
-        dockItem.state = state.hideFromDock ? .on : .off
+        dockItem.state = iQualizeState.load().hideFromDock ? .on : .off
         menu.addItem(dockItem)
 
         // Start at Login toggle
@@ -166,8 +165,9 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
               let id = UUID(uuidString: uuidString),
               let preset = presetStore.preset(for: id) else { return }
         audioEngine.activePreset = preset
-        state.selectedPresetID = preset.id
-        state.save()
+        var s = iQualizeState.load()
+        s.selectedPresetID = preset.id
+        s.save()
     }
 
     @objc private func openEQSettings(_ sender: NSMenuItem) {
@@ -185,26 +185,30 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         }
         eqWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
-        state.windowOpen = true
-        state.save()
+        var s = iQualizeState.load()
+        s.windowOpen = true
+        s.save()
     }
 
     @objc private func windowDidClose(_ notification: Notification) {
-        state.windowOpen = false
-        state.save()
+        var s = iQualizeState.load()
+        s.windowOpen = false
+        s.save()
     }
 
     @objc private func toggleBypass(_ sender: NSMenuItem) {
         audioEngine.bypassed.toggle()
-        state.bypassed = audioEngine.bypassed
-        state.save()
+        var s = iQualizeState.load()
+        s.bypassed = audioEngine.bypassed
+        s.save()
         updateIcon()
     }
 
     @objc private func toggleClipping(_ sender: NSMenuItem) {
         audioEngine.peakLimiter.toggle()
-        state.peakLimiter = audioEngine.peakLimiter
-        state.save()
+        var s = iQualizeState.load()
+        s.peakLimiter = audioEngine.peakLimiter
+        s.save()
     }
 
     @objc private func toggleStartAtLogin(_ sender: NSMenuItem) {
@@ -220,15 +224,17 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
-        state.startAtLogin = SMAppService.mainApp.status == .enabled
-        state.save()
+        var s = iQualizeState.load()
+        s.startAtLogin = SMAppService.mainApp.status == .enabled
+        s.save()
     }
 
     @objc private func toggleHideFromDock(_ sender: NSMenuItem) {
-        state.hideFromDock.toggle()
-        state.save()
-        NSApp.setActivationPolicy(state.hideFromDock ? .accessory : .regular)
-        if !state.hideFromDock {
+        var s = iQualizeState.load()
+        s.hideFromDock.toggle()
+        s.save()
+        NSApp.setActivationPolicy(s.hideFromDock ? .accessory : .regular)
+        if !s.hideFromDock {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
