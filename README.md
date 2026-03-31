@@ -132,6 +132,12 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 - Monochrome white/gray spectrum layers with z-ordered rendering; blue EQ response curve is the only colored element
 - Spectrum toggle states persist across app restarts
 
+### Stereo Balance
+
+- L/R balance slider in the bottom bar, centered by default
+- Snap-to-center with double-click reset
+- Applied as per-channel gain in the audio render callback
+
 ### System Integration
 
 - Automatic output device switching and reconnection
