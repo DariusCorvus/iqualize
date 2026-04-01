@@ -19,6 +19,7 @@ struct iQualizeState: Codable {
     var activeChannel: String?
     var inputGainDB: Float
     var outputGainDB: Float
+    var showBandwidthAsQ: Bool
 
     static let defaultState = iQualizeState(
         isEnabled: false,
@@ -36,12 +37,13 @@ struct iQualizeState: Codable {
         splitChannelEnabled: false,
         activeChannel: nil,
         inputGainDB: 0.0,
-        outputGainDB: 0.0
+        outputGainDB: 0.0,
+        showBandwidthAsQ: true
     )
 
     private static let key = "com.iqualize.state"
 
-    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0) {
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0, showBandwidthAsQ: Bool = true) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.peakLimiter = peakLimiter
@@ -58,6 +60,7 @@ struct iQualizeState: Codable {
         self.activeChannel = activeChannel
         self.inputGainDB = inputGainDB
         self.outputGainDB = outputGainDB
+        self.showBandwidthAsQ = showBandwidthAsQ
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +81,7 @@ struct iQualizeState: Codable {
         activeChannel = try? container.decode(String.self, forKey: .activeChannel)
         inputGainDB = (try? container.decode(Float.self, forKey: .inputGainDB)) ?? 0.0
         outputGainDB = (try? container.decode(Float.self, forKey: .outputGainDB)) ?? 0.0
+        showBandwidthAsQ = (try? container.decode(Bool.self, forKey: .showBandwidthAsQ)) ?? true
     }
 
     static func load() -> iQualizeState {

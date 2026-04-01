@@ -285,11 +285,30 @@ extension EQBand {
         }
     }
 
-    var bandwidthLabel: String {
-        if bandwidth == Float(Int(bandwidth)) {
-            return "Q \(Int(bandwidth))"
+    /// Convert bandwidth in octaves to Q factor (frequency-independent approximation).
+    static func octavesToQ(_ bw: Float) -> Float {
+        let p = powf(2, bw)
+        return sqrtf(p) / (p - 1)
+    }
+
+    /// Convert Q factor to bandwidth in octaves.
+    static func qToOctaves(_ q: Float) -> Float {
+        return 2 * asinh(1 / (2 * q)) / logf(2)
+    }
+
+    func bandwidthLabel(asQ: Bool) -> String {
+        if asQ {
+            let q = Self.octavesToQ(bandwidth)
+            if q >= 10 {
+                return String(format: "Q %.0f", q)
+            }
+            return String(format: "Q %.2f", q)
+        } else {
+            if bandwidth == Float(Int(bandwidth)) {
+                return "\(Int(bandwidth)) oct"
+            }
+            return String(format: "%.1f oct", bandwidth)
         }
-        return String(format: "Q %.1f", bandwidth)
     }
 
     var gainLabel: String {
