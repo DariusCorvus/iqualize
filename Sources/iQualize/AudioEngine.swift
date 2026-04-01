@@ -20,6 +20,7 @@ nonisolated(unsafe) private var rtScratchBuffer: UnsafeMutablePointer<Float>?
 nonisolated(unsafe) private var rtScratchCapacity: Int = 0
 nonisolated(unsafe) private var rtBalanceLeft: Float = 1.0
 nonisolated(unsafe) private var rtBalanceRight: Float = 1.0
+nonisolated(unsafe) private var rtInputGain: Float = 1.0
 /// Per-channel biquad filter chains for split channel mode.
 /// Only active when rtSplitChannelActive is true.
 /// Channels 2+ (e.g. 5.1/7.1 surround) pass through unprocessed — per-channel
@@ -59,7 +60,7 @@ private func renderCallback(
         let channelIndex = i
         let gain = channelIndex == 0 ? rtBalanceLeft : rtBalanceRight
         for f in 0..<frames {
-            outData[f] = scratch[f * ch + channelIndex] * gain
+            outData[f] = scratch[f * ch + channelIndex] * rtInputGain * gain
         }
     }
 
@@ -92,6 +93,7 @@ final class AudioEngine {
     private var procID: AudioDeviceIOProcID?
     private var engine: AVAudioEngine?
     private var eq: AVAudioUnitEQ?
+    private var outputGainEQ: AVAudioUnitEQ?
     private var limiter: AVAudioUnitEffect?
     private var ringBuffer: AudioRingBuffer?
     private var tapUUID = UUID()
@@ -131,6 +133,16 @@ final class AudioEngine {
             rtSplitChannelActive = splitChannelActive
             applyBands()
         }
+    }
+
+    var inputGainDB: Float = 0.0 {
+        didSet {
+            rtInputGain = powf(10, inputGainDB / 20)
+        }
+    }
+
+    var outputGainDB: Float = 0.0 {
+        didSet { outputGainEQ?.globalGain = outputGainDB }
     }
 
     var maxGainDB: Float = 12
@@ -345,11 +357,17 @@ final class AudioEngine {
         limiterNode.bypass = !peakLimiter || bypassed
         self.limiter = limiterNode
 
+        let outputGainNode = AVAudioUnitEQ(numberOfBands: 0)
+        outputGainNode.globalGain = outputGainDB
+        self.outputGainEQ = outputGainNode
+
         avEngine.attach(sourceNode)
         avEngine.attach(eqNode)
+        avEngine.attach(outputGainNode)
         avEngine.attach(limiterNode)
         avEngine.connect(sourceNode, to: eqNode, format: format)
-        avEngine.connect(eqNode, to: limiterNode, format: format)
+        avEngine.connect(eqNode, to: outputGainNode, format: format)
+        avEngine.connect(outputGainNode, to: limiterNode, format: format)
         avEngine.connect(limiterNode, to: avEngine.outputNode, format: format)
 
         try avEngine.start()

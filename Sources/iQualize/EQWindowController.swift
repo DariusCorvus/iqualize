@@ -1241,6 +1241,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var balanceSlider: NSSlider!
     private var balanceValueLabel: NSTextField!
     private var channelSegment: NSSegmentedControl!
+    private var inputGainSlider: NSSlider!
+    private var inputGainValueLabel: NSTextField!
+    private var outputGainSlider: NSSlider!
+    private var outputGainValueLabel: NSTextField!
     private var activeChannel: EQChannel = .left
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
@@ -1627,6 +1631,54 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         channelSeparator.boxType = .separator
         channelSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
 
+        // Input gain slider
+        let inputGainSeparator = NSBox()
+        inputGainSeparator.boxType = .separator
+        inputGainSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
+        let inputGainLabel = NSTextField(labelWithString: "In:")
+        inputGainLabel.font = .systemFont(ofSize: 11)
+
+        inputGainSlider = NSSlider(value: Double(savedState.inputGainDB), minValue: -24, maxValue: 24,
+                                   target: self, action: #selector(inputGainChanged(_:)))
+        inputGainSlider.isContinuous = true
+        inputGainSlider.widthAnchor.constraint(equalToConstant: 80).isActive = true
+
+        let inputGainDoubleClick = NSClickGestureRecognizer(target: self, action: #selector(resetInputGain(_:)))
+        inputGainDoubleClick.numberOfClicksRequired = 2
+        inputGainSlider.addGestureRecognizer(inputGainDoubleClick)
+
+        inputGainValueLabel = NSTextField(labelWithString: "0 dB")
+        inputGainValueLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        inputGainValueLabel.textColor = .secondaryLabelColor
+        inputGainValueLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        inputGainValueLabel.alignment = .center
+        updateInputGainLabel(savedState.inputGainDB)
+
+        audioEngine.inputGainDB = savedState.inputGainDB
+
+        // Output gain slider
+        let outputGainLabel = NSTextField(labelWithString: "Out:")
+        outputGainLabel.font = .systemFont(ofSize: 11)
+
+        outputGainSlider = NSSlider(value: Double(savedState.outputGainDB), minValue: -24, maxValue: 24,
+                                    target: self, action: #selector(outputGainChanged(_:)))
+        outputGainSlider.isContinuous = true
+        outputGainSlider.widthAnchor.constraint(equalToConstant: 80).isActive = true
+
+        let outputGainDoubleClick = NSClickGestureRecognizer(target: self, action: #selector(resetOutputGain(_:)))
+        outputGainDoubleClick.numberOfClicksRequired = 2
+        outputGainSlider.addGestureRecognizer(outputGainDoubleClick)
+
+        outputGainValueLabel = NSTextField(labelWithString: "0 dB")
+        outputGainValueLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        outputGainValueLabel.textColor = .secondaryLabelColor
+        outputGainValueLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        outputGainValueLabel.alignment = .center
+        updateOutputGainLabel(savedState.outputGainDB)
+
+        audioEngine.outputGainDB = savedState.outputGainDB
+
         bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
@@ -1637,6 +1689,13 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(balanceValueLabel)
         bottomRow.addArrangedSubview(channelSeparator)
         bottomRow.addArrangedSubview(channelSegment)
+        bottomRow.addArrangedSubview(inputGainSeparator)
+        bottomRow.addArrangedSubview(inputGainLabel)
+        bottomRow.addArrangedSubview(inputGainSlider)
+        bottomRow.addArrangedSubview(inputGainValueLabel)
+        bottomRow.addArrangedSubview(outputGainLabel)
+        bottomRow.addArrangedSubview(outputGainSlider)
+        bottomRow.addArrangedSubview(outputGainValueLabel)
         bottomRow.addArrangedSubview(spacer)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
@@ -2208,6 +2267,66 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             balanceValueLabel.stringValue = "\(Int(-value * 100))L"
         } else {
             balanceValueLabel.stringValue = "\(Int(value * 100))R"
+        }
+    }
+
+    @objc private func inputGainChanged(_ sender: NSSlider) {
+        var value = Float(sender.doubleValue)
+        if abs(value) < 0.5 { value = 0; sender.doubleValue = 0 }
+        audioEngine.inputGainDB = value
+        updateInputGainLabel(value)
+        var state = iQualizeState.load()
+        state.inputGainDB = value
+        state.save()
+    }
+
+    @objc private func resetInputGain(_ sender: NSClickGestureRecognizer) {
+        inputGainSlider.doubleValue = 0
+        audioEngine.inputGainDB = 0
+        updateInputGainLabel(0)
+        var state = iQualizeState.load()
+        state.inputGainDB = 0
+        state.save()
+    }
+
+    private func updateInputGainLabel(_ value: Float) {
+        let rounded = Int(value.rounded())
+        if rounded == 0 {
+            inputGainValueLabel.stringValue = "0 dB"
+        } else if rounded > 0 {
+            inputGainValueLabel.stringValue = "+\(rounded) dB"
+        } else {
+            inputGainValueLabel.stringValue = "\(rounded) dB"
+        }
+    }
+
+    @objc private func outputGainChanged(_ sender: NSSlider) {
+        var value = Float(sender.doubleValue)
+        if abs(value) < 0.5 { value = 0; sender.doubleValue = 0 }
+        audioEngine.outputGainDB = value
+        updateOutputGainLabel(value)
+        var state = iQualizeState.load()
+        state.outputGainDB = value
+        state.save()
+    }
+
+    @objc private func resetOutputGain(_ sender: NSClickGestureRecognizer) {
+        outputGainSlider.doubleValue = 0
+        audioEngine.outputGainDB = 0
+        updateOutputGainLabel(0)
+        var state = iQualizeState.load()
+        state.outputGainDB = 0
+        state.save()
+    }
+
+    private func updateOutputGainLabel(_ value: Float) {
+        let rounded = Int(value.rounded())
+        if rounded == 0 {
+            outputGainValueLabel.stringValue = "0 dB"
+        } else if rounded > 0 {
+            outputGainValueLabel.stringValue = "+\(rounded) dB"
+        } else {
+            outputGainValueLabel.stringValue = "\(rounded) dB"
         }
     }
 
