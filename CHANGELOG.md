@@ -2,6 +2,19 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.23.0] - 2026-04-01
+
+### Added
+- Q/Octave bandwidth display toggle — bandwidth values now display as Q factor (default) or octaves, with correct conversion using Audio EQ Cookbook formulas
+- Global Settings window — consolidates Peak Limiter, Max Gain, Auto Scale, Pre/Post-EQ Spectrum, Bandwidth mode, Hide from Dock, and Start at Login into a dedicated settings panel (Cmd+,)
+- Gear icon in EQ window bottom bar to open Settings directly
+- Two-row bottom bar layout — top row for session controls (bypass, gain, balance, channel mode), bottom row for display and audio settings
+- Bidirectional sync between Settings window and EQ window controls
+
+### Changed
+- Menu bar streamlined — Peak Limiter, Hide from Dock, and Start at Login moved to Settings window
+- "Open iQualize" no longer uses Cmd+, shortcut (reassigned to Settings)
+
 ## [0.19.0] - 2026-04-01
 
 ### Added
