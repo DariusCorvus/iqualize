@@ -58,6 +58,8 @@ open /Applications/iQualize.app
 - Axis labels and detailed frequency/dB grid overlay
 - Catmull-Rom spline interpolation connecting slider knob positions (dashed gray line)
 - Adjustable max gain range: ±6, ±12, ±18, or ±24 dB — or auto-scale to fit the current curve (up to ±24 dB)
+- Input gain (±24 dB) — pre-EQ level control for proper gain staging
+- Output gain (±24 dB) — post-EQ level control, applied before the peak limiter
 - Dynamic peak limiter (AUPeakLimiter) — prevents digital clipping at 0 dBFS
 - Smooth, glitch-free parameter updates — only changed values are written to the audio unit
 
@@ -113,13 +115,14 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — 
 
 ### Menu Bar
 
+- Open iQualize (Cmd+,) — first item in the menu for quick access
+- Option+click the menu bar icon to open the EQ window directly (skips the menu)
 - Presets submenu with checkmarks and active preset name in parent item
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Peak Limiter toggle
 - Hide from Dock toggle — run as a menu bar-only app
 - Start at Login toggle — launch automatically when you log in
 - Current output device display
-- Open EQ window (Cmd+,)
 - About iQualize — shows version info
 
 ### Spectrum Analyzer
@@ -167,6 +170,13 @@ iQualize uses Core Audio Taps (CATap), introduced in macOS 14.2, to intercept sy
 │                            ▼                    │
 │                    AVAudioUnitEQ                 │
 │                    (parametric EQ)               │
+│                            │                    │
+│                            ▼                    │
+│                    Output Gain Node              │
+│                    (AVAudioUnitEQ, 0 bands)      │
+│                            │                    │
+│                            ▼                    │
+│                    AUPeakLimiter                  │
 │                            │                    │
 │                            ▼                    │
 │                    Output Device                 │
