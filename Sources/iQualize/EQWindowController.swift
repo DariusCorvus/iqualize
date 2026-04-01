@@ -1729,7 +1729,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(maxGainPicker)
         bottomRow.addArrangedSubview(autoScaleCheckbox)
 
-        let settingsGearButton = NSButton(image: NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")!,
+        let gearIcon = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") ?? NSImage()
+        let settingsGearButton = NSButton(image: gearIcon,
                                            target: self, action: #selector(openSettingsWindow(_:)))
         settingsGearButton.bezelStyle = .inline
         settingsGearButton.isBordered = false
@@ -2526,6 +2527,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     func syncMaxGain(_ db: Float) {
         maxGainPicker.selectItem(withTag: Int(db))
         buildSliders()
+        updateCurveView()
     }
 
     func syncAutoScale(_ on: Bool) {
