@@ -1245,6 +1245,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var inputGainValueLabel: NSTextField!
     private var outputGainSlider: NSSlider!
     private var outputGainValueLabel: NSTextField!
+    private var bandwidthModeSegment: NSSegmentedControl!
+    private var showBandwidthAsQ: Bool = true
     private var activeChannel: EQChannel = .left
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
@@ -1576,6 +1578,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                                            target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqSpectrumCheckbox.state = savedState.postEqSpectrumEnabled ? .on : .off
 
+        // Bandwidth display mode: Q / Oct
+        showBandwidthAsQ = savedState.showBandwidthAsQ
+        bandwidthModeSegment = NSSegmentedControl(labels: ["Q", "Oct"], trackingMode: .selectOne,
+                                                   target: self, action: #selector(bandwidthModeChanged(_:)))
+        bandwidthModeSegment.controlSize = .small
+        bandwidthModeSegment.font = .systemFont(ofSize: 10)
+        bandwidthModeSegment.selectedSegment = showBandwidthAsQ ? 0 : 1
+
         // Wire spectrum data to curve view
         curveView.preEqSpectrumData = audioEngine.preEqAnalyzer.spectrumData
         curveView.postEqSpectrumData = audioEngine.postEqAnalyzer.spectrumData
@@ -1682,6 +1692,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRow.addArrangedSubview(bypassCheckbox)
         bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
+        bottomRow.addArrangedSubview(bandwidthModeSegment)
         bottomRow.addArrangedSubview(balanceSeparator)
         bottomRow.addArrangedSubview(balanceLabelL)
         bottomRow.addArrangedSubview(balanceSlider)
@@ -1792,7 +1803,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             }
             freqLabels.append(freqLabel)
 
-            let qLabel = UnitTextField(string: band.bandwidthLabel)
+            let qLabel = UnitTextField(string: band.bandwidthLabel(asQ: showBandwidthAsQ))
             qLabel.font = .systemFont(ofSize: 9)
             qLabel.alignment = .center
             qLabel.bezelStyle = .roundedBezel
@@ -1804,7 +1815,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
             qLabel.onFocus = { [weak self] in
                 guard let self, i < self.activeBands.count else { return }
                 self.selectBand(nil)
-                qLabel.stringValue = Self.formatRawFloat(self.activeBands[i].bandwidth)
+                if self.showBandwidthAsQ {
+                    let q = EQBand.octavesToQ(self.activeBands[i].bandwidth)
+                    qLabel.stringValue = Self.formatRawFloat(q)
+                } else {
+                    qLabel.stringValue = Self.formatRawFloat(self.activeBands[i].bandwidth)
+                }
             }
             qLabel.onScroll = { [weak self] direction in
                 self?.scrollAdjustBandwidth(at: i, direction: direction)
@@ -2234,7 +2250,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         guard newQ != activeBands[index].bandwidth else { return }
 
         modifyActivePresetBands { bands in bands[index].bandwidth = newQ }
-        qLabels[index].stringValue = activeBands[index].bandwidthLabel
+        qLabels[index].stringValue = activeBands[index].bandwidthLabel(asQ: showBandwidthAsQ)
         markModified()
         updateCurveView()
     }
@@ -2462,6 +2478,16 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         state.save()
     }
 
+    @objc private func bandwidthModeChanged(_ sender: NSSegmentedControl) {
+        showBandwidthAsQ = sender.selectedSegment == 0
+        for (i, label) in qLabels.enumerated() where i < activeBands.count {
+            label.stringValue = activeBands[i].bandwidthLabel(asQ: showBandwidthAsQ)
+        }
+        var state = iQualizeState.load()
+        state.showBandwidthAsQ = showBandwidthAsQ
+        state.save()
+    }
+
     @objc private func addBandAtIndex(_ sender: NSMenuItem) {
         guard activeBands.count < EQPresetData.maxBandCount else { return }
         let oldPreset = audioEngine.activePreset
@@ -2643,7 +2669,15 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         } else if qLabels.contains(field) {
             let text = field.stringValue.trimmingCharacters(in: .whitespaces)
             if let value = Float(text), value > 0 {
-                let clamped = min(max(value, 0.1), 10)
+                let octaves: Float
+                if showBandwidthAsQ {
+                    // User typed a Q value — convert to octaves for storage
+                    let clampedQ = min(max(value, 0.1), 50)
+                    octaves = EQBand.qToOctaves(clampedQ)
+                } else {
+                    octaves = value
+                }
+                let clamped = min(max(octaves, 0.05), 10)
                 if clamped != band.bandwidth {
                     let oldPreset = audioEngine.activePreset
                     forkIfBuiltIn()
@@ -2652,7 +2686,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                     registerUndo("Change Bandwidth", oldPreset: oldPreset)
                 }
             }
-            field.stringValue = activeBands[index].bandwidthLabel
+            field.stringValue = activeBands[index].bandwidthLabel(asQ: showBandwidthAsQ)
         }
         updateCurveView()
     }

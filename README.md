@@ -51,7 +51,8 @@ open /Applications/iQualize.app
 
 ### Parametric EQ
 
-- Up to 31 bands with editable frequency (20 Hz – 20 kHz), gain, and Q/bandwidth
+- Up to 31 bands with editable frequency (20 Hz – 20 kHz), gain, and bandwidth
+- Q / Octave display toggle — switch between Q factor and octave bandwidth globally (Q is the default, octaves for musicians who think in bandwidth)
 - 7 filter types per band: Bell (parametric), Low Shelf, High Shelf, Low Pass, High Pass, Band Pass, and Notch
 - Accurate biquad frequency response curve using Audio EQ Cookbook formulas, rendered as a translucent backdrop behind EQ sliders
 - Per-band ghost fills, anchor dots with dB labels, and split boost/cut composite fill
@@ -95,7 +96,7 @@ Presets are `.iqpreset` files — plain JSON:
 }
 ```
 
-Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (Q factor — lower is wider, higher is narrower), `filterType` (one of `parametric`, `lowShelf`, `highShelf`, `lowPass`, `highPass`, `bandPass`, `notch` — defaults to `parametric` if omitted).
+Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (octaves, 0.05–10 — 1.0 = one octave ≈ Q 1.41), `filterType` (one of `parametric`, `lowShelf`, `highShelf`, `lowPass`, `highPass`, `bandPass`, `notch` — defaults to `parametric` if omitted).
 
 ### Undo/Redo
 
