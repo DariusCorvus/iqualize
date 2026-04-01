@@ -64,6 +64,7 @@ If the app fails to launch ("can't be opened" error), debug and fix before proce
 - `Sources/iQualize/iQualizeApp.swift` — app entry, NSApplicationDelegate
 - `Sources/iQualize/MenuBarController.swift` — menu bar icon + dropdown
 - `Sources/iQualize/EQWindowController.swift` — standalone EQ window (sliders, inputs, presets, spectrum visualization)
+- `Sources/iQualize/SettingsWindowController.swift` — global Settings window (Audio, Display, General sections)
 - `Sources/iQualize/AudioEngine.swift` — system audio capture + AVAudioEngine EQ processing
 - `Sources/iQualize/EQPreset.swift` — state persistence + preset data model
 - `Sources/iQualize/EQModels.swift` — EQBand, EQPresetData, PresetStore
