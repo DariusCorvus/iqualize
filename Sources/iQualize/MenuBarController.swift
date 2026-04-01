@@ -46,6 +46,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     // MARK: - NSMenuDelegate — build menu fresh each time it opens
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if NSEvent.modifierFlags.contains(.option) {
+            menu.removeAllItems()
+            menu.cancelTracking()
+            openEQWindow()
+            return
+        }
         populateMenu(menu)
     }
 
