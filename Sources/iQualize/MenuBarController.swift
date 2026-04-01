@@ -52,6 +52,15 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private func populateMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        // Open standalone window
+        let openItem = NSMenuItem(title: "Open iQualize",
+                                   action: #selector(openEQSettings(_:)), keyEquivalent: ",")
+        openItem.keyEquivalentModifierMask = [.command]
+        openItem.target = self
+        menu.addItem(openItem)
+
+        menu.addItem(.separator())
+
         // Presets submenu
         let presetMenuItem = NSMenuItem(title: "Presets (\(audioEngine.activePreset.name))",
                                          action: nil, keyEquivalent: "")
@@ -119,15 +128,6 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         loginItem.target = self
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
-
-        menu.addItem(.separator())
-
-        // Open standalone window
-        let openItem = NSMenuItem(title: "Open iQualize",
-                                   action: #selector(openEQSettings(_:)), keyEquivalent: ",")
-        openItem.keyEquivalentModifierMask = [.command]
-        openItem.target = self
-        menu.addItem(openItem)
 
         menu.addItem(.separator())
 
