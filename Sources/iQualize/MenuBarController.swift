@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 
 @available(macOS 14.2, *)
 @MainActor
@@ -8,6 +7,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private let audioEngine: AudioEngine
     private let presetStore: PresetStore
     private var eqWindowController: EQWindowController?
+    private var settingsWindowController: SettingsWindowController?
 
     init(audioEngine: AudioEngine, presetStore: PresetStore) {
         self.audioEngine = audioEngine
@@ -60,10 +60,16 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
         // Open standalone window
         let openItem = NSMenuItem(title: "Open iQualize",
-                                   action: #selector(openEQSettings(_:)), keyEquivalent: ",")
-        openItem.keyEquivalentModifierMask = [.command]
+                                   action: #selector(openEQSettings(_:)), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+
+        // Settings
+        let settingsItem = NSMenuItem(title: "Settings…",
+                                       action: #selector(openSettings(_:)), keyEquivalent: ",")
+        settingsItem.keyEquivalentModifierMask = [.command]
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
 
@@ -114,27 +120,6 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         bypassItem.state = audioEngine.bypassed ? .on : .off
         menu.addItem(bypassItem)
 
-        // Peak Limiter toggle
-        let clippingItem = NSMenuItem(title: "Peak Limiter",
-                                       action: #selector(toggleClipping(_:)), keyEquivalent: "")
-        clippingItem.target = self
-        clippingItem.state = audioEngine.peakLimiter ? .on : .off
-        menu.addItem(clippingItem)
-
-        // Hide from Dock toggle
-        let dockItem = NSMenuItem(title: "Hide from Dock",
-                                   action: #selector(toggleHideFromDock(_:)), keyEquivalent: "")
-        dockItem.target = self
-        dockItem.state = iQualizeState.load().hideFromDock ? .on : .off
-        menu.addItem(dockItem)
-
-        // Start at Login toggle
-        let loginItem = NSMenuItem(title: "Start at Login",
-                                    action: #selector(toggleStartAtLogin(_:)), keyEquivalent: "")
-        loginItem.target = self
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(loginItem)
-
         menu.addItem(.separator())
 
         // Output device (non-interactive)
@@ -180,9 +165,22 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         openEQWindow()
     }
 
+    @objc private func openSettings(_ sender: NSMenuItem) {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                audioEngine: audioEngine, eqWindowController: eqWindowController)
+        }
+        settingsWindowController?.updateEQWindowController(eqWindowController)
+        settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func openEQWindow() {
         if eqWindowController == nil {
             eqWindowController = EQWindowController(audioEngine: audioEngine, presetStore: presetStore)
+            eqWindowController?.onOpenSettings = { [weak self] in
+                self?.openSettings(NSMenuItem())
+            }
             // Track window close to persist state
             NotificationCenter.default.addObserver(
                 self, selector: #selector(windowDidClose(_:)),
@@ -190,6 +188,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             )
         }
         eqWindowController?.showWindow(nil)
+        settingsWindowController?.updateEQWindowController(eqWindowController)
         NSApp.activate(ignoringOtherApps: true)
         var s = iQualizeState.load()
         s.windowOpen = true
@@ -208,41 +207,6 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         s.bypassed = audioEngine.bypassed
         s.save()
         updateIcon()
-    }
-
-    @objc private func toggleClipping(_ sender: NSMenuItem) {
-        audioEngine.peakLimiter.toggle()
-        var s = iQualizeState.load()
-        s.peakLimiter = audioEngine.peakLimiter
-        s.save()
-    }
-
-    @objc private func toggleStartAtLogin(_ sender: NSMenuItem) {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Failed to update login item"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-        }
-        var s = iQualizeState.load()
-        s.startAtLogin = SMAppService.mainApp.status == .enabled
-        s.save()
-    }
-
-    @objc private func toggleHideFromDock(_ sender: NSMenuItem) {
-        var s = iQualizeState.load()
-        s.hideFromDock.toggle()
-        s.save()
-        NSApp.setActivationPolicy(s.hideFromDock ? .accessory : .regular)
-        if !s.hideFromDock {
-            NSApp.activate(ignoringOtherApps: true)
-        }
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {

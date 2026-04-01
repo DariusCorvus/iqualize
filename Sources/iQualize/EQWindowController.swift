@@ -1238,6 +1238,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var autoScaleCheckbox: NSButton!
     private var preEqSpectrumCheckbox: NSButton!
     private var postEqSpectrumCheckbox: NSButton!
+    private var bandwidthModeSegment: NSSegmentedControl!
     private var balanceSlider: NSSlider!
     private var balanceValueLabel: NSTextField!
     private var channelSegment: NSSegmentedControl!
@@ -1245,13 +1246,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     private var inputGainValueLabel: NSTextField!
     private var outputGainSlider: NSSlider!
     private var outputGainValueLabel: NSTextField!
-    private var bandwidthModeSegment: NSSegmentedControl!
     private var showBandwidthAsQ: Bool = true
     private var activeChannel: EQChannel = .left
     /// Effective max gain: 24 dB when auto-scale is on, otherwise the user-selected value.
     private var effectiveMaxGainDB: Float {
         (autoScaleCheckbox?.state == .on) ? 24 : audioEngine.maxGainDB
     }
+    /// Callback to open the settings window.
+    var onOpenSettings: (() -> Void)?
     private var outputLabel: NSTextField!
     private var newButton: NSButton!
     private var saveControl: NSSegmentedControl!
@@ -1532,7 +1534,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         bottomDivider.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
         bottomDivider.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
 
-        // Row 3: Bottom bar — EQ Enabled (left) + Peak Limiter (right)
+        // Row 3: Bottom bar (two rows)
         bypassCheckbox = NSButton(checkboxWithTitle: "Bypass",
                                     target: self, action: #selector(toggleBypass(_:)))
         bypassCheckbox.state = audioEngine.bypassed ? .on : .off
@@ -1541,15 +1543,28 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                                      target: self, action: #selector(toggleClipping(_:)))
         clippingCheckbox.state = audioEngine.peakLimiter ? .on : .off
 
+        let topRow = NSStackView()
+        topRow.orientation = .horizontal
+        topRow.distribution = .fill
+        topRow.spacing = 8
+        topRow.translatesAutoresizingMaskIntoConstraints = false
+
         let bottomRow = NSStackView()
         bottomRow.orientation = .horizontal
         bottomRow.distribution = .fill
         bottomRow.spacing = 8
         bottomRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let spacer1 = NSView()
+        spacer1.translatesAutoresizingMaskIntoConstraints = false
+        spacer1.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let spacer2 = NSView()
+        spacer2.translatesAutoresizingMaskIntoConstraints = false
+        spacer2.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let savedState = iQualizeState.load()
+        showBandwidthAsQ = savedState.showBandwidthAsQ
 
         let maxGainLabel = NSTextField(labelWithString: "Max:")
         maxGainLabel.font = .systemFont(ofSize: 11)
@@ -1565,7 +1580,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         autoScaleCheckbox = NSButton(checkboxWithTitle: "Auto",
                                        target: self, action: #selector(toggleAutoScale(_:)))
-        let savedState = iQualizeState.load()
         let autoScaleOn = savedState.autoScale
         autoScaleCheckbox.state = autoScaleOn ? .on : .off
         maxGainPicker.isEnabled = !autoScaleOn
@@ -1578,8 +1592,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
                                            target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqSpectrumCheckbox.state = savedState.postEqSpectrumEnabled ? .on : .off
 
-        // Bandwidth display mode: Q / Oct
-        showBandwidthAsQ = savedState.showBandwidthAsQ
         bandwidthModeSegment = NSSegmentedControl(labels: ["Q", "Oct"], trackingMode: .selectOne,
                                                    target: self, action: #selector(bandwidthModeChanged(_:)))
         bandwidthModeSegment.controlSize = .small
@@ -1624,6 +1636,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         balanceSeparator.boxType = .separator
         balanceSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
 
+        let channelSeparator = NSBox()
+        channelSeparator.boxType = .separator
+        channelSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
         // Channel mode segmented control: Linked / L / R
         channelSegment = NSSegmentedControl(labels: ["Linked", "L", "R"], trackingMode: .selectOne,
                                             target: self, action: #selector(channelSegmentChanged(_:)))
@@ -1636,10 +1652,6 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         } else {
             channelSegment.selectedSegment = 0
         }
-
-        let channelSeparator = NSBox()
-        channelSeparator.boxType = .separator
-        channelSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
 
         // Input gain slider
         let inputGainSeparator = NSBox()
@@ -1689,30 +1701,43 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
         audioEngine.outputGainDB = savedState.outputGainDB
 
-        bottomRow.addArrangedSubview(bypassCheckbox)
+        // Top row: Bypass | In: slider val | Out: slider val | L slider R val | Linked/L/R
+        topRow.addArrangedSubview(bypassCheckbox)
+        topRow.addArrangedSubview(inputGainSeparator)
+        topRow.addArrangedSubview(inputGainLabel)
+        topRow.addArrangedSubview(inputGainSlider)
+        topRow.addArrangedSubview(inputGainValueLabel)
+        topRow.addArrangedSubview(outputGainLabel)
+        topRow.addArrangedSubview(outputGainSlider)
+        topRow.addArrangedSubview(outputGainValueLabel)
+        topRow.addArrangedSubview(balanceSeparator)
+        topRow.addArrangedSubview(balanceLabelL)
+        topRow.addArrangedSubview(balanceSlider)
+        topRow.addArrangedSubview(balanceLabelR)
+        topRow.addArrangedSubview(balanceValueLabel)
+        topRow.addArrangedSubview(channelSeparator)
+        topRow.addArrangedSubview(channelSegment)
+        topRow.addArrangedSubview(spacer1)
+
+        // Bottom row: Pre-EQ | Post-EQ | Q/Oct | Peak Limiter | spacer | Max: popup Auto | gear
         bottomRow.addArrangedSubview(preEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(postEqSpectrumCheckbox)
         bottomRow.addArrangedSubview(bandwidthModeSegment)
-        bottomRow.addArrangedSubview(balanceSeparator)
-        bottomRow.addArrangedSubview(balanceLabelL)
-        bottomRow.addArrangedSubview(balanceSlider)
-        bottomRow.addArrangedSubview(balanceLabelR)
-        bottomRow.addArrangedSubview(balanceValueLabel)
-        bottomRow.addArrangedSubview(channelSeparator)
-        bottomRow.addArrangedSubview(channelSegment)
-        bottomRow.addArrangedSubview(inputGainSeparator)
-        bottomRow.addArrangedSubview(inputGainLabel)
-        bottomRow.addArrangedSubview(inputGainSlider)
-        bottomRow.addArrangedSubview(inputGainValueLabel)
-        bottomRow.addArrangedSubview(outputGainLabel)
-        bottomRow.addArrangedSubview(outputGainSlider)
-        bottomRow.addArrangedSubview(outputGainValueLabel)
-        bottomRow.addArrangedSubview(spacer)
+        bottomRow.addArrangedSubview(clippingCheckbox)
+        bottomRow.addArrangedSubview(spacer2)
         bottomRow.addArrangedSubview(maxGainLabel)
         bottomRow.addArrangedSubview(maxGainPicker)
         bottomRow.addArrangedSubview(autoScaleCheckbox)
-        bottomRow.addArrangedSubview(clippingCheckbox)
 
+        let settingsGearButton = NSButton(image: NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")!,
+                                           target: self, action: #selector(openSettingsWindow(_:)))
+        settingsGearButton.bezelStyle = .inline
+        settingsGearButton.isBordered = false
+        bottomRow.addArrangedSubview(settingsGearButton)
+
+        mainStack.addArrangedSubview(topRow)
+        topRow.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
+        topRow.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
         mainStack.addArrangedSubview(bottomRow)
         bottomRow.leadingAnchor.constraint(equalTo: mainStack.leadingAnchor, constant: 16).isActive = true
         bottomRow.trailingAnchor.constraint(equalTo: mainStack.trailingAnchor, constant: -16).isActive = true
@@ -1969,9 +1994,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         clippingCheckbox.state = audioEngine.peakLimiter ? .on : .off
         balanceSlider.doubleValue = Double(audioEngine.balance)
         updateBalanceLabel(audioEngine.balance)
-        let autoOn = iQualizeState.load().autoScale
-        autoScaleCheckbox.state = autoOn ? .on : .off
-        maxGainPicker.isEnabled = !autoOn
+        let refreshState = iQualizeState.load()
+        autoScaleCheckbox.state = refreshState.autoScale ? .on : .off
+        maxGainPicker.isEnabled = !refreshState.autoScale
         updateWindowTitle()
         updateCurveView()
     }
@@ -2486,6 +2511,47 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         var state = iQualizeState.load()
         state.showBandwidthAsQ = showBandwidthAsQ
         state.save()
+    }
+
+    @objc private func openSettingsWindow(_ sender: NSButton) {
+        onOpenSettings?()
+    }
+
+    // MARK: - Settings Sync (called from SettingsWindowController)
+
+    func syncPeakLimiter(_ on: Bool) {
+        clippingCheckbox.state = on ? .on : .off
+    }
+
+    func syncMaxGain(_ db: Float) {
+        maxGainPicker.selectItem(withTag: Int(db))
+        buildSliders()
+    }
+
+    func syncAutoScale(_ on: Bool) {
+        autoScaleCheckbox.state = on ? .on : .off
+        maxGainPicker.isEnabled = !on
+        updateCurveView()
+    }
+
+    func syncPreEqSpectrum(_ on: Bool) {
+        preEqSpectrumCheckbox.state = on ? .on : .off
+        curveView.preEqSpectrumEnabled = on
+        if on { curveView.startAnimationIfNeeded() }
+    }
+
+    func syncPostEqSpectrum(_ on: Bool) {
+        postEqSpectrumCheckbox.state = on ? .on : .off
+        curveView.postEqSpectrumEnabled = on
+        if on { curveView.startAnimationIfNeeded() }
+    }
+
+    func syncBandwidthMode(asQ: Bool) {
+        showBandwidthAsQ = asQ
+        bandwidthModeSegment.selectedSegment = asQ ? 0 : 1
+        for (i, label) in qLabels.enumerated() where i < activeBands.count {
+            label.stringValue = activeBands[i].bandwidthLabel(asQ: showBandwidthAsQ)
+        }
     }
 
     @objc private func addBandAtIndex(_ sender: NSMenuItem) {
