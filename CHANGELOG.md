@@ -2,10 +2,9 @@
 
 All notable changes to iQualize will be documented in this file.
 
-## [0.23.0] - 2026-04-01
+## [0.24.0] - 2026-04-13
 
 ### Added
-- Q/Octave bandwidth display toggle — bandwidth values now display as Q factor (default) or octaves, with correct conversion using Audio EQ Cookbook formulas
 - Global Settings window — consolidates Peak Limiter, Max Gain, Auto Scale, Pre/Post-EQ Spectrum, Bandwidth mode, Hide from Dock, and Start at Login into a dedicated settings panel (Cmd+,)
 - Gear icon in EQ window bottom bar to open Settings directly
 - Two-row bottom bar layout — top row for session controls (bypass, gain, balance, channel mode), bottom row for display and audio settings
@@ -18,6 +17,11 @@ All notable changes to iQualize will be documented in this file.
 ### Fixed
 - `syncMaxGain` now calls `updateCurveView()` so the response curve redraws when gain range changes from Settings
 - Force-unwrap on `NSImage(systemSymbolName:)` replaced with safe fallback
+
+## [0.23.0] - 2026-04-01
+
+### Added
+- Q/Octave bandwidth display toggle — bandwidth values now display as Q factor (default) or octaves, with correct conversion using Audio EQ Cookbook formulas
 
 ## [0.22.0] - 2026-04-01
 
