@@ -120,11 +120,16 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (octaves, 0.05
 - Option+click the menu bar icon to open the EQ window directly (skips the menu)
 - Presets submenu with checkmarks and active preset name in parent item
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
-- Peak Limiter toggle
-- Hide from Dock toggle — run as a menu bar-only app
-- Start at Login toggle — launch automatically when you log in
 - Current output device display
 - About iQualize — shows version info
+
+### Settings
+
+Accessible via the gear icon in the EQ window or the Settings item in the menu bar.
+
+- **Audio**: Peak Limiter toggle
+- **Display**: Q / Octave bandwidth display toggle
+- **General**: Hide from Dock toggle, Start at Login toggle
 
 ### Spectrum Analyzer
 

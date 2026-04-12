@@ -31,6 +31,7 @@ All notable changes to iQualize will be documented in this file.
 - Per-channel L/R EQ with split channel mode — apply different EQ settings to left and right channels independently
 - Channel mode selector (Linked/L/R) in the bottom bar
 
+
 ## [0.19.0] - 2026-04-01
 
 ### Added
