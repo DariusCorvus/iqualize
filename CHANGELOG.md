@@ -15,6 +15,23 @@ All notable changes to iQualize will be documented in this file.
 - Menu bar streamlined — Peak Limiter, Hide from Dock, and Start at Login moved to Settings window
 - "Open iQualize" no longer uses Cmd+, shortcut (reassigned to Settings)
 
+### Fixed
+- `syncMaxGain` now calls `updateCurveView()` so the response curve redraws when gain range changes from Settings
+- Force-unwrap on `NSImage(systemSymbolName:)` replaced with safe fallback
+
+## [0.22.0] - 2026-04-01
+
+### Added
+- Input and output gain controls with dB sliders in the bottom bar
+- Menu bar UX improvements
+
+## [0.21.0] - 2026-04-01
+
+### Added
+- Per-channel L/R EQ with split channel mode — apply different EQ settings to left and right channels independently
+- Channel mode selector (Linked/L/R) in the bottom bar
+
+
 ## [0.19.0] - 2026-04-01
 
 ### Added
