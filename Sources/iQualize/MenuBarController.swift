@@ -220,6 +220,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
     @objc private func quit(_ sender: NSMenuItem) {
         audioEngine.stop()
+        (NSApp.delegate as? AppDelegate)?.isRealQuit = true
         NSApp.terminate(nil)
     }
 
