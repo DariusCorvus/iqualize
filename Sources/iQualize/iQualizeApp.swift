@@ -65,7 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
         // Dock quit: hide to menu bar instead of terminating
-        for window in NSApp.windows where window.isVisible {
+        // Only close titled windows (EQ, Settings) — not internal status item windows
+        for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) {
             window.close()
         }
         NSApp.setActivationPolicy(.accessory)
