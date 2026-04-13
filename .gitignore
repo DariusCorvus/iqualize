@@ -1,5 +1,12 @@
+# macOS / Swift
 .build/
 .swiftpm/
 *.xcodeproj/
 xcuserdata/
 DerivedData/
+
+# Linux / Tauri
+linux/node_modules/
+linux/src-tauri/target/
+linux/.svelte-kit/
+linux/build/

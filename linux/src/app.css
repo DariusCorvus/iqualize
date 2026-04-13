@@ -1,0 +1,105 @@
+:root {
+	--bg-primary: #1e1e1e;
+	--bg-secondary: #2a2a2a;
+	--bg-tertiary: #333333;
+	--bg-input: #1a1a1a;
+	--text-primary: rgba(255, 255, 255, 0.87);
+	--text-secondary: rgba(255, 255, 255, 0.5);
+	--text-tertiary: rgba(255, 255, 255, 0.35);
+	--accent: #4c8dff;
+	--accent-hover: #5a9aff;
+	--border: rgba(255, 255, 255, 0.1);
+	--border-focus: rgba(76, 141, 255, 0.5);
+	--grid-line: rgba(255, 255, 255, 0.04);
+	--grid-line-zero: rgba(255, 255, 255, 0.1);
+	--curve-color: rgba(76, 141, 255, 0.65);
+	--curve-fill-boost: rgba(76, 141, 255, 0.035);
+	--curve-fill-cut: rgba(76, 141, 255, 0.06);
+	--spectrum-pre: rgba(255, 255, 255, 0.4);
+	--spectrum-post-fill: rgba(255, 255, 255, 0.15);
+	--spectrum-post-edge: rgba(255, 255, 255, 0.5);
+	--split-channel: rgba(255, 165, 0, 0.3);
+	--danger: #ff4444;
+	--slider-track: rgba(255, 255, 255, 0.15);
+	--slider-thumb: #4c8dff;
+
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+	font-size: 13px;
+	color: var(--text-primary);
+	background-color: var(--bg-primary);
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	overflow: hidden;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+button {
+	font-family: inherit;
+	font-size: inherit;
+	color: var(--text-primary);
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 4px 10px;
+	cursor: pointer;
+	transition: background-color 0.15s;
+}
+
+button:hover {
+	background: rgba(255, 255, 255, 0.15);
+}
+
+button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+button:disabled:hover {
+	background: var(--bg-tertiary);
+}
+
+select {
+	font-family: inherit;
+	font-size: inherit;
+	color: var(--text-primary);
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+
+input[type='number'],
+input[type='text'] {
+	font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+	font-size: 10px;
+	color: var(--text-primary);
+	background: var(--bg-input);
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 2px 4px;
+	text-align: center;
+	width: 100%;
+}
+
+input[type='number']:focus,
+input[type='text']:focus {
+	outline: none;
+	border-color: var(--border-focus);
+}
+
+input[type='checkbox'] {
+	accent-color: var(--accent);
+}
+
+.monospace {
+	font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
