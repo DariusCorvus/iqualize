@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var audioEngine: AudioEngine!
     private var presetStore: PresetStore!
     private var wasRunningBeforeSleep = false
+    var isRealQuit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check screen/audio capture permission — CATap requires it
@@ -33,6 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Sleep/wake handling
+        // System shutdown/restart — allow real termination
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.isRealQuit = true
+            }
+        }
+
+        // Sleep/wake handling
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -49,6 +60,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isRealQuit {
+            return .terminateNow
+        }
+        // Dock quit: hide to menu bar instead of terminating
+        // Only close titled windows (EQ, Settings) — not internal status item windows
+        for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) {
+            window.close()
+        }
+        NSApp.setActivationPolicy(.accessory)
+        var state = iQualizeState.load()
+        state.hideFromDock = true
+        state.windowOpen = false
+        state.save()
+        return .terminateCancel
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
             menuBarController?.openEQWindow()
@@ -60,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioEngine.stop()
     }
 
+    @objc func realQuit(_ sender: Any?) {
+        isRealQuit = true
+        NSApp.terminate(nil)
+    }
+
     private func setupMainMenu() {
         let mainMenu = NSMenu()
 
@@ -68,7 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About iQualize", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit iQualize", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit iQualize", action: #selector(realQuit(_:)), keyEquivalent: "q")
+        quitItem.target = NSApp.delegate as? AppDelegate
+        appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
