@@ -231,10 +231,37 @@ extension EQPresetData {
         isBuiltIn: true
     )
 
+    static let luzifersVoid = EQPresetData(
+        id: UUID(uuidString: "00000000-0000-0000-0000-00000000000D")!,
+        name: "Luzifer's Void",
+        bands: [
+            //  Hz    gain   bw   — sub mass (18–130 Hz)
+            EQBand(frequency:    18, gain:  4, bandwidth: 2.0),
+            EQBand(frequency:    32, gain:  7, bandwidth: 1.8),
+            EQBand(frequency:    55, gain:  8, bandwidth: 1.6),
+            EQBand(frequency:    85, gain:  6, bandwidth: 1.4),
+            EQBand(frequency:   130, gain:  2, bandwidth: 1.2),
+            //  Hz    gain   bw   — mid vacuum (220–2000 Hz)
+            EQBand(frequency:   220, gain: -5, bandwidth: 1.2),
+            EQBand(frequency:   500, gain: -5, bandwidth: 1.1),
+            EQBand(frequency:  1000, gain: -4, bandwidth: 1.0),
+            EQBand(frequency:  2000, gain: -2, bandwidth: 0.9),
+            //  Hz    gain   bw   — high staircase (3.5k–19k)
+            EQBand(frequency:  3500, gain:  1, bandwidth: 0.8),
+            EQBand(frequency:  5000, gain:  4, bandwidth: 0.8),
+            EQBand(frequency:  7000, gain:  5, bandwidth: 0.6),
+            EQBand(frequency:  9500, gain:  6, bandwidth: 0.5),
+            EQBand(frequency: 12000, gain:  5, bandwidth: 0.6),
+            EQBand(frequency: 15500, gain:  4, bandwidth: 0.8),
+            EQBand(frequency: 19000, gain:  3, bandwidth: 1.0),
+        ],
+        isBuiltIn: true
+    )
+
     static let builtInPresets: [EQPresetData] = [
         .flat, .bassBoost, .vocalClarity, .loudness, .trebleBoost,
         .podcast, .techno, .deepHouse, .hardTechno, .minimal,
-        .americanRap, .germanRap
+        .americanRap, .germanRap, .luzifersVoid
     ]
 
     /// Suggest a frequency for a new band inserted into the current set.

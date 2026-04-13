@@ -2,6 +2,11 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.25.0] - 2026-04-13
+
+### Added
+- Luzifer's Void built-in preset — 16-band parametric EQ for dark techno, bunker techno, and perverted tech with gravitational sub mass, gutted mids, and a rising high-end staircase
+
 ## [0.24.0] - 2026-04-13
 
 ### Added
