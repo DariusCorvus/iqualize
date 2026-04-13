@@ -2,6 +2,12 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.26.0] - 2026-04-13
+
+### Added
+- DEADBEEF built-in preset — 10-band parametric EQ derived from `0xDEAD` (sub) and `0xBEEF` (presence) hex values, fine-tuned for dark techno
+- 0xDEADBEEF built-in preset — 20-band pure math experiment where every frequency is a bit-shift of `0xDEAD` or `0xBEEF`, with alternating boost/notch pairs at each octave
+
 ## [0.25.0] - 2026-04-13
 
 ### Added
