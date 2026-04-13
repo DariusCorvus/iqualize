@@ -231,10 +231,96 @@ extension EQPresetData {
         isBuiltIn: true
     )
 
+    static let luzifersVoid = EQPresetData(
+        id: UUID(uuidString: "00000000-0000-0000-0000-00000000000D")!,
+        name: "Luzifer's Void",
+        bands: [
+            //  Hz    gain   bw   — sub mass (18–130 Hz)
+            EQBand(frequency:    18, gain:  4, bandwidth: 2.0),
+            EQBand(frequency:    32, gain:  7, bandwidth: 1.8),
+            EQBand(frequency:    55, gain:  8, bandwidth: 1.6),
+            EQBand(frequency:    85, gain:  6, bandwidth: 1.4),
+            EQBand(frequency:   130, gain:  2, bandwidth: 1.2),
+            //  Hz    gain   bw   — mid vacuum (220–2000 Hz)
+            EQBand(frequency:   220, gain: -5, bandwidth: 1.2),
+            EQBand(frequency:   500, gain: -5, bandwidth: 1.1),
+            EQBand(frequency:  1000, gain: -4, bandwidth: 1.0),
+            EQBand(frequency:  2000, gain: -2, bandwidth: 0.9),
+            //  Hz    gain   bw   — high staircase (3.5k–19k)
+            EQBand(frequency:  3500, gain:  1, bandwidth: 0.8),
+            EQBand(frequency:  5000, gain:  4, bandwidth: 0.8),
+            EQBand(frequency:  7000, gain:  5, bandwidth: 0.6),
+            EQBand(frequency:  9500, gain:  6, bandwidth: 0.5),
+            EQBand(frequency: 12000, gain:  5, bandwidth: 0.6),
+            EQBand(frequency: 15500, gain:  4, bandwidth: 0.8),
+            EQBand(frequency: 19000, gain:  3, bandwidth: 1.0),
+        ],
+        isBuiltIn: true
+    )
+
+    static let deadbeef = EQPresetData(
+        id: UUID(uuidString: "DEAD0003-BEEF-4E87-A591-0000DEADBEEF")!,
+        name: "DEADBEEF",
+        bands: [
+            //  Hz     gain   bw   — 0xDEAD shifts: sub (dead weight)
+            EQBand(frequency:    27, gain:  7, bandwidth: 1.8),
+            EQBand(frequency:    55, gain:  8, bandwidth: 1.6),
+            EQBand(frequency:   111, gain:  5, bandwidth: 1.4),
+            //  Hz     gain   bw   — mid scoop (the void between)
+            EQBand(frequency:   222, gain: -6, bandwidth: 1.2),
+            EQBand(frequency:   445, gain: -8, bandwidth: 1.4),
+            EQBand(frequency:   890, gain: -6, bandwidth: 1.2),
+            //  Hz     gain   bw   — 0xBEEF shifts: presence (beef)
+            EQBand(frequency:  1781, gain:  5, bandwidth: 0.5),
+            EQBand(frequency:  3562, gain:  7, bandwidth: 0.4),
+            EQBand(frequency:  7125, gain:  6, bandwidth: 0.5),
+            EQBand(frequency: 14251, gain:  4, bandwidth: 0.7),
+        ],
+        isBuiltIn: true
+    )
+
+    static let oxDeadbeef = EQPresetData(
+        id: UUID(uuidString: "DEAD0004-BEEF-4E87-A591-0000DEADBEEF")!,
+        name: "0xDEADBEEF",
+        bands: [
+            //  0xDEAD >> 11 boost / 0xBEEF >> 11 notch
+            EQBand(frequency:    27, gain:  6, bandwidth: 1.4),
+            EQBand(frequency:    23, gain: -5, bandwidth: 0.4),
+            //  0xDEAD >> 10 / 0xBEEF >> 10
+            EQBand(frequency:    55, gain:  7, bandwidth: 1.2),
+            EQBand(frequency:    47, gain: -6, bandwidth: 0.3),
+            //  0xDEAD >> 9 / 0xBEEF >> 9
+            EQBand(frequency:   111, gain:  4, bandwidth: 1.0),
+            EQBand(frequency:    95, gain: -5, bandwidth: 0.3),
+            //  0xDEAD >> 8 / 0xBEEF >> 8
+            EQBand(frequency:   222, gain: -4, bandwidth: 0.8),
+            EQBand(frequency:   190, gain: -6, bandwidth: 0.3),
+            //  0xDEAD >> 7 / 0xBEEF >> 7
+            EQBand(frequency:   445, gain: -5, bandwidth: 0.8),
+            EQBand(frequency:   381, gain: -7, bandwidth: 0.3),
+            //  0xDEAD >> 6 / 0xBEEF >> 6
+            EQBand(frequency:   890, gain: -3, bandwidth: 0.7),
+            EQBand(frequency:   763, gain: -6, bandwidth: 0.3),
+            //  0xDEAD >> 5 / 0xBEEF >> 5
+            EQBand(frequency:  1781, gain:  3, bandwidth: 0.5),
+            EQBand(frequency:  1527, gain: -5, bandwidth: 0.3),
+            //  0xDEAD >> 4 / 0xBEEF >> 4
+            EQBand(frequency:  3562, gain:  5, bandwidth: 0.4),
+            EQBand(frequency:  3054, gain: -4, bandwidth: 0.3),
+            //  0xDEAD >> 3 / 0xBEEF >> 3
+            EQBand(frequency:  7125, gain:  4, bandwidth: 0.4),
+            EQBand(frequency:  6109, gain: -5, bandwidth: 0.3),
+            //  0xDEAD >> 2 / 0xBEEF >> 2
+            EQBand(frequency: 14251, gain:  3, bandwidth: 0.6),
+            EQBand(frequency: 12219, gain: -4, bandwidth: 0.3),
+        ],
+        isBuiltIn: true
+    )
+
     static let builtInPresets: [EQPresetData] = [
         .flat, .bassBoost, .vocalClarity, .loudness, .trebleBoost,
         .podcast, .techno, .deepHouse, .hardTechno, .minimal,
-        .americanRap, .germanRap
+        .americanRap, .germanRap, .luzifersVoid, .deadbeef, .oxDeadbeef
     ]
 
     /// Suggest a frequency for a new band inserted into the current set.
