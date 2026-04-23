@@ -106,29 +106,31 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (octaves, 0.05
 
 ### Keyboard & Scroll
 
-- Click a band to select it (accent-colored border indicator)
+- Click a band or drag its slider to select it (accent-colored border indicator)
 - Arrow Up/Down to adjust gain (±0.5 dB per step)
 - Arrow Left/Right to adjust frequency (semitone steps)
 - Tab / Shift+Tab to cycle between bands
 - Scroll wheel over sliders to adjust gain
 - Scroll wheel over frequency/Q inputs to adjust those values
+- Cmd+B — toggle Bypass EQ (works from the EQ window or menu bar)
+- Cmd+, — open Settings
 - Rapid adjustments coalesced into single undo entries
 
 ### Menu Bar
 
-- Open iQualize (Cmd+,) — first item in the menu for quick access
+- Open iQualize — first item in the menu for quick access
 - Option+click the menu bar icon to open the EQ window directly (skips the menu)
-- Presets submenu with checkmarks and active preset name in parent item
+- Presets submenu with checkmarks and active preset name in parent item — changes sync to the EQ window in real time
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
 - Current output device display
 - About iQualize — shows version info
 
 ### Settings
 
-Accessible via the gear icon in the EQ window or the Settings item in the menu bar.
+Accessible via the gear icon in the EQ window, the Settings item in the menu bar, or Cmd+,.
 
-- **Audio**: Peak Limiter toggle
-- **Display**: Q / Octave bandwidth display toggle
+- **Audio**: Peak Limiter toggle, Max Gain range (±6/12/18/24 dB), Auto Scale toggle
+- **Display**: Pre-EQ / Post-EQ spectrum toggles, Q / Octave bandwidth display toggle
 - **General**: Hide from Dock toggle, Start at Login toggle
 
 ### Spectrum Analyzer
@@ -138,7 +140,7 @@ Accessible via the gear icon in the EQ window or the Settings item in the menu b
 - 2048-point FFT via Accelerate vDSP with Hann windowing and log-frequency binning
 - Smooth Catmull-Rom spline rendering with peak hold lines
 - Lock-free double-buffered audio-to-UI transfer for glitch-free 60fps updates
-- Monochrome white/gray spectrum layers with z-ordered rendering; blue EQ response curve is the only colored element
+- Distinct spectrum colors: cyan for pre-EQ, orange for post-EQ — visible in both Light and Dark appearance modes
 - Spectrum toggle states persist across app restarts
 
 ### Stereo Balance

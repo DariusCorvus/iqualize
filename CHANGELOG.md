@@ -2,6 +2,15 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.27.1] - 2026-04-23
+
+### Fixed
+- Menu bar preset changes now sync to the EQ window (picker, sliders, curve)
+- Spectrum lines visible in Light mode — pre-EQ is cyan, post-EQ is orange (previously both white, invisible on light backgrounds)
+- Cmd+B (Bypass EQ) and Cmd+, (Settings) now work as global keyboard shortcuts from the EQ window via the main menu bar
+- Pre/Post-EQ spectrum toggle state syncs from EQ window to Settings window
+- Dragging a slider selects that band for arrow key navigation
+
 ## [0.27.0] - 2026-04-13
 
 ### Changed

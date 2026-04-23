@@ -3,7 +3,7 @@ import ServiceManagement
 
 @available(macOS 14.2, *)
 @MainActor
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let audioEngine: AudioEngine
     private weak var eqWindowController: EQWindowController?
 
@@ -30,6 +30,7 @@ final class SettingsWindowController: NSWindowController {
         window.center()
 
         super.init(window: window)
+        window.delegate = self
 
         let contentView = buildContent()
         window.contentView = contentView
@@ -41,6 +42,17 @@ final class SettingsWindowController: NSWindowController {
 
     func updateEQWindowController(_ controller: EQWindowController?) {
         eqWindowController = controller
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        let state = iQualizeState.load()
+        peakLimiterCheckbox.state = audioEngine.peakLimiter ? .on : .off
+        maxGainPicker.selectItem(withTag: Int(audioEngine.maxGainDB))
+        autoScaleCheckbox.state = state.autoScale ? .on : .off
+        maxGainPicker.isEnabled = !state.autoScale
+        preEqCheckbox.state = state.preEqSpectrumEnabled ? .on : .off
+        postEqCheckbox.state = state.postEqSpectrumEnabled ? .on : .off
+        bandwidthModeSegment.selectedSegment = state.showBandwidthAsQ ? 0 : 1
     }
 
     private func buildContent() -> NSView {
