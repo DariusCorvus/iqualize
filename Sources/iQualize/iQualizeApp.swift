@@ -5,7 +5,7 @@ import ServiceManagement
 
 @available(macOS 14.2, *)
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var menuBarController: MenuBarController!
     private var audioEngine: AudioEngine!
     private var presetStore: PresetStore!
@@ -93,6 +93,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    @objc func openSettings(_ sender: Any?) {
+        menuBarController?.showSettings()
+    }
+
+    @objc func toggleBypass(_ sender: Any?) {
+        menuBarController?.toggleBypassFromMenu()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleBypass(_:)) {
+            menuItem.state = audioEngine?.bypassed == true ? .on : .off
+        }
+        return true
+    }
+
     private func setupMainMenu() {
         let mainMenu = NSMenu()
 
@@ -100,6 +115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About iQualize", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit iQualize", action: #selector(realQuit(_:)), keyEquivalent: "q")
         quitItem.target = NSApp.delegate as? AppDelegate
@@ -120,6 +138,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
+
+        // Controls menu (Bypass EQ)
+        let controlsMenuItem = NSMenuItem()
+        let controlsMenu = NSMenu(title: "Controls")
+        let bypassItem = NSMenuItem(title: "Bypass EQ", action: #selector(toggleBypass(_:)), keyEquivalent: "b")
+        bypassItem.target = self
+        controlsMenu.addItem(bypassItem)
+        controlsMenuItem.submenu = controlsMenu
+        mainMenu.addItem(controlsMenuItem)
 
         NSApp.mainMenu = mainMenu
     }

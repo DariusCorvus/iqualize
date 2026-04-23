@@ -96,6 +96,15 @@ final class FrequencyResponseView: NSView {
         }
     }()
 
+    // Appearance-aware colors for spectrum and grid
+    private var isDarkAppearance: Bool {
+        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    private var preEqColor: NSColor { .systemCyan }
+    private var postEqColor: NSColor { .systemOrange }
+    private var gridColor: NSColor { isDarkAppearance ? .white : .black }
+
     // Animation state
     private var currentDisplayMax: Double = 12.0
     private var currentDisplayMin: Double = -12.0
@@ -328,7 +337,7 @@ final class FrequencyResponseView: NSView {
         ctx.saveGState()
         ctx.beginPath()
         addCatmullRomSpline(points, to: ctx, moveToStart: true)
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.40).cgColor)
+        ctx.setStrokeColor(preEqColor.withAlphaComponent(0.50).cgColor)
         ctx.setLineWidth(1.5)
         ctx.setLineJoin(.round)
         ctx.setLineCap(.round)
@@ -355,7 +364,7 @@ final class FrequencyResponseView: NSView {
         addCatmullRomSpline(points, to: ctx)
         ctx.addLine(to: CGPoint(x: points.last!.x, y: plotRect.minY))
         ctx.closePath()
-        ctx.setFillColor(NSColor.white.withAlphaComponent(0.15).cgColor)
+        ctx.setFillColor(postEqColor.withAlphaComponent(0.15).cgColor)
         ctx.fillPath()
         ctx.restoreGState()
 
@@ -363,7 +372,7 @@ final class FrequencyResponseView: NSView {
         ctx.saveGState()
         ctx.beginPath()
         addCatmullRomSpline(points, to: ctx, moveToStart: true)
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.50).cgColor)
+        ctx.setStrokeColor(postEqColor.withAlphaComponent(0.60).cgColor)
         ctx.setLineWidth(1.5)
         ctx.setLineJoin(.round)
         ctx.setLineCap(.round)
@@ -577,12 +586,12 @@ final class FrequencyResponseView: NSView {
             }
             if preEqSpectrumEnabled, let data = preEqSpectrumData {
                 drawSpectrumPeakHold(data, in: spectrumRect, ctx: ctx,
-                                     color: NSColor.white.withAlphaComponent(0.20),
+                                     color: preEqColor.withAlphaComponent(0.30),
                                      lineWidth: 1.0)
             }
             if postEqSpectrumEnabled, let data = postEqSpectrumData {
                 drawSpectrumPeakHold(data, in: spectrumRect, ctx: ctx,
-                                     color: NSColor.white.withAlphaComponent(0.25),
+                                     color: postEqColor.withAlphaComponent(0.35),
                                      lineWidth: 1.0)
             }
 
@@ -598,7 +607,7 @@ final class FrequencyResponseView: NSView {
 
         // Frequency grid (vertical lines)
         let freqGridLines: [Float] = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.04).cgColor)
+        ctx.setStrokeColor(gridColor.withAlphaComponent(0.04).cgColor)
         ctx.setLineWidth(0.5)
         for freq in freqGridLines {
             let x = freqToX(freq, width: plotRect.width) + plotRect.minX
@@ -620,10 +629,10 @@ final class FrequencyResponseView: NSView {
             guard y >= plotRect.minY && y <= plotRect.maxY else { dbLine += dbStep; continue }
             if abs(dbLine) < 0.1 {
                 // 0 dB line — brighter
-                ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+                ctx.setStrokeColor(gridColor.withAlphaComponent(0.10).cgColor)
                 ctx.setLineWidth(0.75)
             } else {
-                ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.04).cgColor)
+                ctx.setStrokeColor(gridColor.withAlphaComponent(0.04).cgColor)
                 ctx.setLineWidth(0.5)
             }
             ctx.move(to: CGPoint(x: plotRect.minX, y: y))
@@ -794,7 +803,7 @@ final class FrequencyResponseView: NSView {
                 let compositeDBf = Float(compositeDB)
                 let labelAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 8, weight: .regular),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                    .foregroundColor: gridColor.withAlphaComponent(0.35),
                 ]
                 let dbText: String
                 if compositeDBf == Float(Int(compositeDBf)) {
@@ -836,7 +845,7 @@ final class FrequencyResponseView: NSView {
             let splinePath = CGMutablePath()
             splinePath.move(to: curvePoints[0])
             for pt in curvePoints.dropFirst() { splinePath.addLine(to: pt) }
-            ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.30).cgColor)
+            ctx.setStrokeColor(gridColor.withAlphaComponent(0.30).cgColor)
             ctx.setLineWidth(isBackdrop ? 0.75 : 1.0)
             ctx.setLineDash(phase: 0, lengths: [4, 3])
             ctx.addPath(splinePath)
@@ -882,7 +891,7 @@ final class FrequencyResponseView: NSView {
                 let compositeDBf = Float(compositeDB)
                 let labelAttrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 8, weight: .regular),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.35),
+                    .foregroundColor: gridColor.withAlphaComponent(0.35),
                 ]
                 let dbText: String
                 if compositeDBf == Float(Int(compositeDBf)) {
@@ -907,7 +916,7 @@ final class FrequencyResponseView: NSView {
         if isBackdrop {
             let axisAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 8, weight: .regular),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.20),
+                .foregroundColor: gridColor.withAlphaComponent(0.20),
             ]
             let displayMaxInt = Int(round(currentDisplayMax))
             let displayMinInt = Int(round(currentDisplayMin))
@@ -1968,7 +1977,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     // MARK: - Sync UI ↔ Engine
 
-    private func syncUIToPreset() {
+    func syncUIToPreset() {
         savedPresetSnapshot = audioEngine.activePreset
         isModified = false
         resetButton.isEnabled = false
@@ -2548,6 +2557,10 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         if on { curveView.startAnimationIfNeeded() }
     }
 
+    func syncBypass(_ on: Bool) {
+        bypassCheckbox.state = on ? .on : .off
+    }
+
     func syncBandwidthMode(asQ: Bool) {
         showBandwidthAsQ = asQ
         bandwidthModeSegment.selectedSegment = asQ ? 0 : 1
@@ -2789,6 +2802,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     @objc private func sliderMoved(_ sender: NSSlider) {
         let index = sender.tag
         guard index < activeBands.count else { return }
+        selectBand(index)
 
         // Snapshot at drag start for coalesced undo
         if sliderDragSnapshot == nil {

@@ -159,6 +159,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         var s = iQualizeState.load()
         s.selectedPresetID = preset.id
         s.save()
+        eqWindowController?.syncUIToPreset()
     }
 
     @objc private func openEQSettings(_ sender: NSMenuItem) {
@@ -207,6 +208,25 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         s.bypassed = audioEngine.bypassed
         s.save()
         updateIcon()
+    }
+
+    func showSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                audioEngine: audioEngine, eqWindowController: eqWindowController)
+        }
+        settingsWindowController?.updateEQWindowController(eqWindowController)
+        settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func toggleBypassFromMenu() {
+        audioEngine.bypassed.toggle()
+        var s = iQualizeState.load()
+        s.bypassed = audioEngine.bypassed
+        s.save()
+        updateIcon()
+        eqWindowController?.syncBypass(audioEngine.bypassed)
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {
