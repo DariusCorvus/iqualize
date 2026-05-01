@@ -101,8 +101,8 @@ final class FrequencyResponseView: NSView {
         effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    private var preEqColor: NSColor { .systemCyan }
-    private var postEqColor: NSColor { .systemOrange }
+    var preEqColor: NSColor = .systemCyan { didSet { needsDisplay = true } }
+    var postEqColor: NSColor = .systemOrange { didSet { needsDisplay = true } }
     private var gridColor: NSColor { isDarkAppearance ? .white : .black }
 
     // Animation state
@@ -1615,6 +1615,12 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView.postEqSpectrumData = audioEngine.postEqAnalyzer.spectrumData
         curveView.preEqSpectrumEnabled = savedState.preEqSpectrumEnabled
         curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled && !audioEngine.bypassed
+        if let hex = savedState.preEqSpectrumColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.preEqColor = c
+        }
+        if let hex = savedState.postEqSpectrumColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.postEqColor = c
+        }
         if savedState.preEqSpectrumEnabled || (savedState.postEqSpectrumEnabled && !audioEngine.bypassed) {
             curveView.startAnimationIfNeeded()
         }
@@ -2562,6 +2568,14 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         let effective = on && !audioEngine.bypassed
         curveView.postEqSpectrumEnabled = effective
         if effective { curveView.startAnimationIfNeeded() }
+    }
+
+    func syncPreEqSpectrumColor(_ color: NSColor) {
+        curveView.preEqColor = color
+    }
+
+    func syncPostEqSpectrumColor(_ color: NSColor) {
+        curveView.postEqColor = color
     }
 
     func syncBypass(_ on: Bool) {

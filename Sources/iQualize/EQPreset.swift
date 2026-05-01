@@ -20,6 +20,10 @@ struct iQualizeState: Codable {
     var inputGainDB: Float
     var outputGainDB: Float
     var showBandwidthAsQ: Bool
+    /// User-picked Pre-EQ spectrum color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var preEqSpectrumColorHex: String?
+    /// User-picked Post-EQ spectrum color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var postEqSpectrumColorHex: String?
 
     static let defaultState = iQualizeState(
         isEnabled: false,
@@ -43,7 +47,7 @@ struct iQualizeState: Codable {
 
     private static let key = "com.iqualize.state"
 
-    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0, showBandwidthAsQ: Bool = true) {
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0, showBandwidthAsQ: Bool = true, preEqSpectrumColorHex: String? = nil, postEqSpectrumColorHex: String? = nil) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.peakLimiter = peakLimiter
@@ -61,6 +65,8 @@ struct iQualizeState: Codable {
         self.inputGainDB = inputGainDB
         self.outputGainDB = outputGainDB
         self.showBandwidthAsQ = showBandwidthAsQ
+        self.preEqSpectrumColorHex = preEqSpectrumColorHex
+        self.postEqSpectrumColorHex = postEqSpectrumColorHex
     }
 
     init(from decoder: Decoder) throws {
@@ -82,6 +88,8 @@ struct iQualizeState: Codable {
         inputGainDB = (try? container.decode(Float.self, forKey: .inputGainDB)) ?? 0.0
         outputGainDB = (try? container.decode(Float.self, forKey: .outputGainDB)) ?? 0.0
         showBandwidthAsQ = (try? container.decode(Bool.self, forKey: .showBandwidthAsQ)) ?? true
+        preEqSpectrumColorHex = try? container.decode(String.self, forKey: .preEqSpectrumColorHex)
+        postEqSpectrumColorHex = try? container.decode(String.self, forKey: .postEqSpectrumColorHex)
     }
 
     static func load() -> iQualizeState {
