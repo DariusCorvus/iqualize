@@ -20,10 +20,16 @@ struct iQualizeState: Codable {
     var inputGainDB: Float
     var outputGainDB: Float
     var showBandwidthAsQ: Bool
-    /// User-picked Pre-EQ spectrum color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
-    var preEqSpectrumColorHex: String?
-    /// User-picked Post-EQ spectrum color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
-    var postEqSpectrumColorHex: String?
+    /// User-picked Pre-EQ line color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var preEqLineColorHex: String?
+    /// User-picked Post-EQ line color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var postEqLineColorHex: String?
+    /// User-picked Pre-EQ fill color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var preEqFillColorHex: String?
+    /// User-picked Post-EQ fill color as `#RRGGBB` (sRGB). nil = use the dynamic system color.
+    var postEqFillColorHex: String?
+    var preEqFillEnabled: Bool
+    var postEqFillEnabled: Bool
 
     static let defaultState = iQualizeState(
         isEnabled: false,
@@ -42,12 +48,14 @@ struct iQualizeState: Codable {
         activeChannel: nil,
         inputGainDB: 0.0,
         outputGainDB: 0.0,
-        showBandwidthAsQ: true
+        showBandwidthAsQ: true,
+        preEqFillEnabled: false,
+        postEqFillEnabled: true
     )
 
     private static let key = "com.iqualize.state"
 
-    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0, showBandwidthAsQ: Bool = true, preEqSpectrumColorHex: String? = nil, postEqSpectrumColorHex: String? = nil) {
+    init(isEnabled: Bool, selectedPresetID: UUID, peakLimiter: Bool, windowOpen: Bool = false, maxGainDB: Float = 12, bypassed: Bool = false, autoScale: Bool = true, preEqSpectrumEnabled: Bool = false, postEqSpectrumEnabled: Bool = false, hideFromDock: Bool = false, startAtLogin: Bool = false, balance: Float = 0.0, splitChannelEnabled: Bool = false, activeChannel: String? = nil, inputGainDB: Float = 0.0, outputGainDB: Float = 0.0, showBandwidthAsQ: Bool = true, preEqLineColorHex: String? = nil, postEqLineColorHex: String? = nil, preEqFillColorHex: String? = nil, postEqFillColorHex: String? = nil, preEqFillEnabled: Bool = false, postEqFillEnabled: Bool = true) {
         self.isEnabled = isEnabled
         self.selectedPresetID = selectedPresetID
         self.peakLimiter = peakLimiter
@@ -65,8 +73,12 @@ struct iQualizeState: Codable {
         self.inputGainDB = inputGainDB
         self.outputGainDB = outputGainDB
         self.showBandwidthAsQ = showBandwidthAsQ
-        self.preEqSpectrumColorHex = preEqSpectrumColorHex
-        self.postEqSpectrumColorHex = postEqSpectrumColorHex
+        self.preEqLineColorHex = preEqLineColorHex
+        self.postEqLineColorHex = postEqLineColorHex
+        self.preEqFillColorHex = preEqFillColorHex
+        self.postEqFillColorHex = postEqFillColorHex
+        self.preEqFillEnabled = preEqFillEnabled
+        self.postEqFillEnabled = postEqFillEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -88,8 +100,12 @@ struct iQualizeState: Codable {
         inputGainDB = (try? container.decode(Float.self, forKey: .inputGainDB)) ?? 0.0
         outputGainDB = (try? container.decode(Float.self, forKey: .outputGainDB)) ?? 0.0
         showBandwidthAsQ = (try? container.decode(Bool.self, forKey: .showBandwidthAsQ)) ?? true
-        preEqSpectrumColorHex = try? container.decode(String.self, forKey: .preEqSpectrumColorHex)
-        postEqSpectrumColorHex = try? container.decode(String.self, forKey: .postEqSpectrumColorHex)
+        preEqLineColorHex = try? container.decode(String.self, forKey: .preEqLineColorHex)
+        postEqLineColorHex = try? container.decode(String.self, forKey: .postEqLineColorHex)
+        preEqFillColorHex = try? container.decode(String.self, forKey: .preEqFillColorHex)
+        postEqFillColorHex = try? container.decode(String.self, forKey: .postEqFillColorHex)
+        preEqFillEnabled = (try? container.decode(Bool.self, forKey: .preEqFillEnabled)) ?? false
+        postEqFillEnabled = (try? container.decode(Bool.self, forKey: .postEqFillEnabled)) ?? true
     }
 
     static func load() -> iQualizeState {
