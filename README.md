@@ -121,16 +121,16 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (octaves, 0.05
 - Open iQualize — first item in the menu for quick access
 - Option+click the menu bar icon to open the EQ window directly (skips the menu)
 - Presets submenu with checkmarks and active preset name in parent item — changes sync to the EQ window in real time
-- Bypass EQ toggle (Cmd+B) — pass audio through unprocessed
+- Bypass EQ toggle (Cmd+B) — pass audio through unprocessed; while bypassed, the Post-EQ spectrum line and its color/fill controls are hidden/disabled (post-EQ would otherwise just mirror pre-EQ)
 - Current output device display
-- About iQualize — shows version info
+- About iQualize — shows version and a "View on GitHub" button that opens the project page in your default browser
 
 ### Settings
 
 Accessible via the gear icon in the EQ window, the Settings item in the menu bar, or Cmd+,.
 
 - **Audio**: Peak Limiter toggle, Max Gain range (±6/12/18/24 dB), Auto Scale toggle
-- **Display**: Pre-EQ / Post-EQ spectrum toggles, Q / Octave bandwidth display toggle
+- **Display**: Pre-EQ / Post-EQ spectrum toggles, per-spectrum line color picker, per-spectrum Fill toggle with its own color picker, reset buttons to return to the dynamic system colors, Q / Octave bandwidth display toggle
 - **General**: Hide from Dock toggle, Start at Login toggle
 
 ### Spectrum Analyzer
@@ -140,8 +140,10 @@ Accessible via the gear icon in the EQ window, the Settings item in the menu bar
 - 2048-point FFT via Accelerate vDSP with Hann windowing and log-frequency binning
 - Smooth Catmull-Rom spline rendering with peak hold lines
 - Lock-free double-buffered audio-to-UI transfer for glitch-free 60fps updates
-- Distinct spectrum colors: cyan for pre-EQ, orange for post-EQ — visible in both Light and Dark appearance modes
-- Spectrum toggle states persist across app restarts
+- Customizable line and fill colors per spectrum (Settings → Display) — defaults to cyan for pre-EQ, orange for post-EQ, both adapting to Light and Dark appearance; reset returns to the dynamic system color
+- Per-spectrum fill toggle (off by default for pre-EQ, on for post-EQ) with its own color, independent from the line color
+- Post-EQ spectrum auto-hides when EQ bypass is active (post-EQ would otherwise just mirror pre-EQ)
+- Spectrum toggle states, fill toggles, and color choices persist across app restarts
 
 ### Stereo Balance
 
