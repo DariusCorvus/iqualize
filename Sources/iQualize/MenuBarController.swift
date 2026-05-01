@@ -182,6 +182,11 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
             eqWindowController?.onOpenSettings = { [weak self] in
                 self?.openSettings(NSMenuItem())
             }
+            eqWindowController?.onBypassChanged = { [weak self] in
+                guard let self = self else { return }
+                self.updateIcon()
+                self.settingsWindowController?.syncBypass(self.audioEngine.bypassed)
+            }
             // Track window close to persist state
             NotificationCenter.default.addObserver(
                 self, selector: #selector(windowDidClose(_:)),
@@ -208,6 +213,8 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         s.bypassed = audioEngine.bypassed
         s.save()
         updateIcon()
+        eqWindowController?.syncBypass(audioEngine.bypassed)
+        settingsWindowController?.syncBypass(audioEngine.bypassed)
     }
 
     func showSettings() {
@@ -227,6 +234,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         s.save()
         updateIcon()
         eqWindowController?.syncBypass(audioEngine.bypassed)
+        settingsWindowController?.syncBypass(audioEngine.bypassed)
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {

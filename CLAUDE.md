@@ -71,3 +71,4 @@ If the app fails to launch ("can't be opened" error), debug and fix before proce
 - `Sources/iQualize/BiquadResponse.swift` — biquad filter frequency response calculation (Audio EQ Cookbook)
 - `Sources/iQualize/SpectrumAnalyzer.swift` — real-time FFT spectrum analysis via Accelerate vDSP
 - `Sources/iQualize/SpectrumData.swift` — lock-free double-buffered audio-to-UI data transfer
+- `Sources/iQualize/ColorHex.swift` — NSColor ↔ #RRGGBB sRGB hex helpers for persisting user-picked spectrum colors

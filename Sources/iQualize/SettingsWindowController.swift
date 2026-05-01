@@ -12,6 +12,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var autoScaleCheckbox: NSButton!
     private var preEqCheckbox: NSButton!
     private var postEqCheckbox: NSButton!
+    private var preEqLineColorWell: NSColorWell!
+    private var postEqLineColorWell: NSColorWell!
+    private var preEqLineResetButton: NSButton!
+    private var postEqLineResetButton: NSButton!
+    private var preEqFillCheckbox: NSButton!
+    private var postEqFillCheckbox: NSButton!
+    private var preEqFillColorWell: NSColorWell!
+    private var postEqFillColorWell: NSColorWell!
+    private var preEqFillResetButton: NSButton!
+    private var postEqFillResetButton: NSButton!
     private var bandwidthModeSegment: NSSegmentedControl!
     private var hideFromDockCheckbox: NSButton!
     private var startAtLoginCheckbox: NSButton!
@@ -34,7 +44,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let contentView = buildContent()
         window.contentView = contentView
-        window.setContentSize(contentView.fittingSize)
+        let fitting = contentView.fittingSize
+        window.setContentSize(NSSize(width: max(fitting.width, 320), height: fitting.height))
     }
 
     @available(*, unavailable)
@@ -52,7 +63,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         maxGainPicker.isEnabled = !state.autoScale
         preEqCheckbox.state = state.preEqSpectrumEnabled ? .on : .off
         postEqCheckbox.state = state.postEqSpectrumEnabled ? .on : .off
+        preEqLineColorWell.color = (state.preEqLineColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemCyan
+        postEqLineColorWell.color = (state.postEqLineColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemOrange
+        preEqFillCheckbox.state = state.preEqFillEnabled ? .on : .off
+        postEqFillCheckbox.state = state.postEqFillEnabled ? .on : .off
+        preEqFillColorWell.color = (state.preEqFillColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemCyan
+        postEqFillColorWell.color = (state.postEqFillColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemOrange
+        applyPostEqEnabled(!audioEngine.bypassed)
         bandwidthModeSegment.selectedSegment = state.showBandwidthAsQ ? 0 : 1
+    }
+
+    func syncBypass(_ on: Bool) {
+        applyPostEqEnabled(!on)
+    }
+
+    private func applyPostEqEnabled(_ enabled: Bool) {
+        for control in [postEqCheckbox, postEqLineColorWell, postEqLineResetButton,
+                        postEqFillCheckbox, postEqFillColorWell, postEqFillResetButton] as [NSControl] {
+            control.isEnabled = enabled
+        }
     }
 
     private func buildContent() -> NSView {
@@ -108,12 +137,45 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         preEqCheckbox = NSButton(checkboxWithTitle: "Pre-EQ Spectrum",
                                    target: self, action: #selector(togglePreEqSpectrum(_:)))
         preEqCheckbox.state = state.preEqSpectrumEnabled ? .on : .off
-        mainStack.addArrangedSubview(preEqCheckbox)
+        preEqLineColorWell = makeColorWell(action: #selector(preEqLineColorChanged(_:)))
+        preEqLineColorWell.color = (state.preEqLineColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemCyan
+        preEqLineResetButton = makeResetButton(action: #selector(resetPreEqLineColor(_:)))
+        preEqFillCheckbox = NSButton(checkboxWithTitle: "Fill",
+                                      target: self, action: #selector(togglePreEqFill(_:)))
+        preEqFillCheckbox.state = state.preEqFillEnabled ? .on : .off
+        preEqFillColorWell = makeColorWell(action: #selector(preEqFillColorChanged(_:)))
+        preEqFillColorWell.color = (state.preEqFillColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemCyan
+        preEqFillResetButton = makeResetButton(action: #selector(resetPreEqFillColor(_:)))
+        mainStack.addArrangedSubview(makeSpectrumGroup(
+            checkbox: preEqCheckbox,
+            lineWell: preEqLineColorWell, lineReset: preEqLineResetButton,
+            fillCheckbox: preEqFillCheckbox,
+            fillWell: preEqFillColorWell, fillReset: preEqFillResetButton
+        ))
 
         postEqCheckbox = NSButton(checkboxWithTitle: "Post-EQ Spectrum",
                                     target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqCheckbox.state = state.postEqSpectrumEnabled ? .on : .off
-        mainStack.addArrangedSubview(postEqCheckbox)
+        postEqLineColorWell = makeColorWell(action: #selector(postEqLineColorChanged(_:)))
+        postEqLineColorWell.color = (state.postEqLineColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemOrange
+        postEqLineResetButton = makeResetButton(action: #selector(resetPostEqLineColor(_:)))
+        postEqFillCheckbox = NSButton(checkboxWithTitle: "Fill",
+                                       target: self, action: #selector(togglePostEqFill(_:)))
+        postEqFillCheckbox.state = state.postEqFillEnabled ? .on : .off
+        postEqFillColorWell = makeColorWell(action: #selector(postEqFillColorChanged(_:)))
+        postEqFillColorWell.color = (state.postEqFillColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemOrange
+        postEqFillResetButton = makeResetButton(action: #selector(resetPostEqFillColor(_:)))
+        let postEqEnabled = !audioEngine.bypassed
+        for control in [postEqCheckbox, postEqLineColorWell, postEqLineResetButton,
+                        postEqFillCheckbox, postEqFillColorWell, postEqFillResetButton] as [NSControl] {
+            control.isEnabled = postEqEnabled
+        }
+        mainStack.addArrangedSubview(makeSpectrumGroup(
+            checkbox: postEqCheckbox,
+            lineWell: postEqLineColorWell, lineReset: postEqLineResetButton,
+            fillCheckbox: postEqFillCheckbox,
+            fillWell: postEqFillColorWell, fillReset: postEqFillResetButton
+        ))
 
         let bwRow = NSStackView()
         bwRow.orientation = .horizontal
@@ -151,6 +213,59 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let label = NSTextField(labelWithString: title)
         label.font = .boldSystemFont(ofSize: 13)
         return label
+    }
+
+    private func makeColorWell(action: Selector) -> NSColorWell {
+        let well = NSColorWell(style: .minimal)
+        well.target = self
+        well.action = action
+        well.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        well.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        return well
+    }
+
+    private func makeResetButton(action: Selector) -> NSButton {
+        let image = NSImage(systemSymbolName: "arrow.counterclockwise",
+                            accessibilityDescription: "Reset to default")
+        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        button.isBordered = false
+        button.toolTip = "Reset to default"
+        button.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        return button
+    }
+
+    private func makeSpectrumRow(checkbox: NSButton, colorWell: NSColorWell, resetButton: NSButton) -> NSStackView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.spacing = 6
+        row.alignment = .centerY
+        row.addArrangedSubview(checkbox)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        row.addArrangedSubview(spacer)
+        row.addArrangedSubview(colorWell)
+        row.addArrangedSubview(resetButton)
+        return row
+    }
+
+    private func makeSpectrumGroup(checkbox: NSButton,
+                                   lineWell: NSColorWell, lineReset: NSButton,
+                                   fillCheckbox: NSButton,
+                                   fillWell: NSColorWell, fillReset: NSButton) -> NSStackView {
+        let group = NSStackView()
+        group.orientation = .vertical
+        group.alignment = .leading
+        group.spacing = 4
+        group.addArrangedSubview(makeSpectrumRow(checkbox: checkbox,
+                                                  colorWell: lineWell,
+                                                  resetButton: lineReset))
+        let fillRow = makeSpectrumRow(checkbox: fillCheckbox,
+                                       colorWell: fillWell,
+                                       resetButton: fillReset)
+        fillRow.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 0)
+        group.addArrangedSubview(fillRow)
+        return group
     }
 
     // MARK: - Actions
@@ -195,6 +310,86 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         state.postEqSpectrumEnabled = on
         state.save()
         eqWindowController?.syncPostEqSpectrum(on)
+    }
+
+    @objc private func preEqLineColorChanged(_ sender: NSColorWell) {
+        let srgb = sender.color.usingColorSpace(.sRGB) ?? sender.color
+        var state = iQualizeState.load()
+        state.preEqLineColorHex = srgb.srgbHexRGB
+        state.save()
+        eqWindowController?.syncPreEqLineColor(srgb)
+    }
+
+    @objc private func postEqLineColorChanged(_ sender: NSColorWell) {
+        let srgb = sender.color.usingColorSpace(.sRGB) ?? sender.color
+        var state = iQualizeState.load()
+        state.postEqLineColorHex = srgb.srgbHexRGB
+        state.save()
+        eqWindowController?.syncPostEqLineColor(srgb)
+    }
+
+    @objc private func resetPreEqLineColor(_ sender: NSButton) {
+        var state = iQualizeState.load()
+        state.preEqLineColorHex = nil
+        state.save()
+        preEqLineColorWell.color = .systemCyan
+        eqWindowController?.syncPreEqLineColor(.systemCyan)
+    }
+
+    @objc private func resetPostEqLineColor(_ sender: NSButton) {
+        var state = iQualizeState.load()
+        state.postEqLineColorHex = nil
+        state.save()
+        postEqLineColorWell.color = .systemOrange
+        eqWindowController?.syncPostEqLineColor(.systemOrange)
+    }
+
+    @objc private func togglePreEqFill(_ sender: NSButton) {
+        let on = sender.state == .on
+        var state = iQualizeState.load()
+        state.preEqFillEnabled = on
+        state.save()
+        eqWindowController?.syncPreEqFillEnabled(on)
+    }
+
+    @objc private func togglePostEqFill(_ sender: NSButton) {
+        let on = sender.state == .on
+        var state = iQualizeState.load()
+        state.postEqFillEnabled = on
+        state.save()
+        eqWindowController?.syncPostEqFillEnabled(on)
+    }
+
+    @objc private func preEqFillColorChanged(_ sender: NSColorWell) {
+        let srgb = sender.color.usingColorSpace(.sRGB) ?? sender.color
+        var state = iQualizeState.load()
+        state.preEqFillColorHex = srgb.srgbHexRGB
+        state.save()
+        eqWindowController?.syncPreEqFillColor(srgb)
+    }
+
+    @objc private func postEqFillColorChanged(_ sender: NSColorWell) {
+        let srgb = sender.color.usingColorSpace(.sRGB) ?? sender.color
+        var state = iQualizeState.load()
+        state.postEqFillColorHex = srgb.srgbHexRGB
+        state.save()
+        eqWindowController?.syncPostEqFillColor(srgb)
+    }
+
+    @objc private func resetPreEqFillColor(_ sender: NSButton) {
+        var state = iQualizeState.load()
+        state.preEqFillColorHex = nil
+        state.save()
+        preEqFillColorWell.color = .systemCyan
+        eqWindowController?.syncPreEqFillColor(.systemCyan)
+    }
+
+    @objc private func resetPostEqFillColor(_ sender: NSButton) {
+        var state = iQualizeState.load()
+        state.postEqFillColorHex = nil
+        state.save()
+        postEqFillColorWell.color = .systemOrange
+        eqWindowController?.syncPostEqFillColor(.systemOrange)
     }
 
     @objc private func bandwidthModeChanged(_ sender: NSSegmentedControl) {

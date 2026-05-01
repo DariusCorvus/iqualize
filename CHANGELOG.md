@@ -6,6 +6,10 @@ All notable changes to iQualize will be documented in this file.
 
 ### Added
 - About iQualize alert now has a "View on GitHub" button that opens the project page in your default browser (#60)
+- Custom Pre-EQ and Post-EQ spectrum colors — each spectrum has a line color and an optional fill (with its own color) in Settings → Display, with reset buttons to return to the dynamic system color. Pre-EQ now supports fill too (off by default; Post-EQ defaults to on, matching the previous look)
+
+### Changed
+- Post-EQ Spectrum checkbox is disabled and the post-EQ line is hidden while EQ is bypassed (post-EQ would just mirror pre-EQ in that state); your preference is preserved and restored when bypass turns off
 
 ## [0.27.1] - 2026-04-23
 

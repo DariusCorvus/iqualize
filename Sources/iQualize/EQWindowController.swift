@@ -101,8 +101,12 @@ final class FrequencyResponseView: NSView {
         effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    private var preEqColor: NSColor { .systemCyan }
-    private var postEqColor: NSColor { .systemOrange }
+    var preEqLineColor: NSColor = .systemCyan { didSet { needsDisplay = true } }
+    var preEqFillColor: NSColor = .systemCyan { didSet { needsDisplay = true } }
+    var postEqLineColor: NSColor = .systemOrange { didSet { needsDisplay = true } }
+    var postEqFillColor: NSColor = .systemOrange { didSet { needsDisplay = true } }
+    var preEqFillEnabled: Bool = false { didSet { needsDisplay = true } }
+    var postEqFillEnabled: Bool = true { didSet { needsDisplay = true } }
     private var gridColor: NSColor { isDarkAppearance ? .white : .black }
 
     // Animation state
@@ -323,56 +327,38 @@ final class FrequencyResponseView: NSView {
         }
     }
 
-    /// Draws the Pre-EQ spectrum stroke (no fill, no peak hold).
-    private func drawPreEqLine(
+    /// Draws a spectrum's optional fill and top edge stroke. Pass `fillColor: nil` to draw line-only.
+    private func drawSpectrumFillAndStroke(
         _ data: SpectrumData,
         in plotRect: CGRect,
-        ctx: CGContext
+        ctx: CGContext,
+        fillColor: NSColor?,
+        strokeColor: NSColor,
+        fillAlpha: CGFloat = 0.15,
+        strokeAlpha: CGFloat = 0.60
     ) {
         data.read(specMagnitudes, peaks: specPeaks)
 
         let points = spectrumPoints(specMagnitudes, in: plotRect)
         guard points.count >= 2 else { return }
 
+        if let fillColor {
+            ctx.saveGState()
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: points[0].x, y: plotRect.minY))
+            ctx.addLine(to: points[0])
+            addCatmullRomSpline(points, to: ctx)
+            ctx.addLine(to: CGPoint(x: points.last!.x, y: plotRect.minY))
+            ctx.closePath()
+            ctx.setFillColor(fillColor.withAlphaComponent(fillAlpha).cgColor)
+            ctx.fillPath()
+            ctx.restoreGState()
+        }
+
         ctx.saveGState()
         ctx.beginPath()
         addCatmullRomSpline(points, to: ctx, moveToStart: true)
-        ctx.setStrokeColor(preEqColor.withAlphaComponent(0.50).cgColor)
-        ctx.setLineWidth(1.5)
-        ctx.setLineJoin(.round)
-        ctx.setLineCap(.round)
-        ctx.strokePath()
-        ctx.restoreGState()
-    }
-
-    /// Draws the Post-EQ spectrum fill and edge stroke (no peak hold).
-    private func drawPostEqFillAndEdge(
-        _ data: SpectrumData,
-        in plotRect: CGRect,
-        ctx: CGContext
-    ) {
-        data.read(specMagnitudes, peaks: specPeaks)
-
-        let points = spectrumPoints(specMagnitudes, in: plotRect)
-        guard points.count >= 2 else { return }
-
-        // Filled area
-        ctx.saveGState()
-        ctx.beginPath()
-        ctx.move(to: CGPoint(x: points[0].x, y: plotRect.minY))
-        ctx.addLine(to: points[0])
-        addCatmullRomSpline(points, to: ctx)
-        ctx.addLine(to: CGPoint(x: points.last!.x, y: plotRect.minY))
-        ctx.closePath()
-        ctx.setFillColor(postEqColor.withAlphaComponent(0.15).cgColor)
-        ctx.fillPath()
-        ctx.restoreGState()
-
-        // Edge line
-        ctx.saveGState()
-        ctx.beginPath()
-        addCatmullRomSpline(points, to: ctx, moveToStart: true)
-        ctx.setStrokeColor(postEqColor.withAlphaComponent(0.60).cgColor)
+        ctx.setStrokeColor(strokeColor.withAlphaComponent(strokeAlpha).cgColor)
         ctx.setLineWidth(1.5)
         ctx.setLineJoin(.round)
         ctx.setLineCap(.round)
@@ -577,21 +563,31 @@ final class FrequencyResponseView: NSView {
             ctx.saveGState()
             ctx.clip(to: spectrumRect)
 
-            // Z-order: Pre-EQ line → Post-EQ fill+edge → Pre-EQ peak → Post-EQ peak
+            // Z-order: Pre-EQ fill+line → Post-EQ fill+line → Pre-EQ peak → Post-EQ peak
             if preEqSpectrumEnabled, let data = preEqSpectrumData {
-                drawPreEqLine(data, in: spectrumRect, ctx: ctx)
+                drawSpectrumFillAndStroke(
+                    data, in: spectrumRect, ctx: ctx,
+                    fillColor: preEqFillEnabled ? preEqFillColor : nil,
+                    strokeColor: preEqLineColor,
+                    strokeAlpha: 0.50
+                )
             }
             if postEqSpectrumEnabled, let data = postEqSpectrumData {
-                drawPostEqFillAndEdge(data, in: spectrumRect, ctx: ctx)
+                drawSpectrumFillAndStroke(
+                    data, in: spectrumRect, ctx: ctx,
+                    fillColor: postEqFillEnabled ? postEqFillColor : nil,
+                    strokeColor: postEqLineColor,
+                    strokeAlpha: 0.60
+                )
             }
             if preEqSpectrumEnabled, let data = preEqSpectrumData {
                 drawSpectrumPeakHold(data, in: spectrumRect, ctx: ctx,
-                                     color: preEqColor.withAlphaComponent(0.30),
+                                     color: preEqLineColor.withAlphaComponent(0.30),
                                      lineWidth: 1.0)
             }
             if postEqSpectrumEnabled, let data = postEqSpectrumData {
                 drawSpectrumPeakHold(data, in: spectrumRect, ctx: ctx,
-                                     color: postEqColor.withAlphaComponent(0.35),
+                                     color: postEqLineColor.withAlphaComponent(0.35),
                                      lineWidth: 1.0)
             }
 
@@ -1263,6 +1259,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
     /// Callback to open the settings window.
     var onOpenSettings: (() -> Void)?
+    /// Callback fired when the user toggles bypass from this window.
+    var onBypassChanged: (() -> Void)?
     private var outputLabel: NSTextField!
     private var newButton: NSButton!
     private var saveControl: NSSegmentedControl!
@@ -1600,6 +1598,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         postEqSpectrumCheckbox = NSButton(checkboxWithTitle: "Post-EQ",
                                            target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqSpectrumCheckbox.state = savedState.postEqSpectrumEnabled ? .on : .off
+        postEqSpectrumCheckbox.isEnabled = !audioEngine.bypassed
 
         bandwidthModeSegment = NSSegmentedControl(labels: ["Q", "Oct"], trackingMode: .selectOne,
                                                    target: self, action: #selector(bandwidthModeChanged(_:)))
@@ -1611,8 +1610,22 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView.preEqSpectrumData = audioEngine.preEqAnalyzer.spectrumData
         curveView.postEqSpectrumData = audioEngine.postEqAnalyzer.spectrumData
         curveView.preEqSpectrumEnabled = savedState.preEqSpectrumEnabled
-        curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled
-        if savedState.preEqSpectrumEnabled || savedState.postEqSpectrumEnabled {
+        curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled && !audioEngine.bypassed
+        if let hex = savedState.preEqLineColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.preEqLineColor = c
+        }
+        if let hex = savedState.postEqLineColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.postEqLineColor = c
+        }
+        if let hex = savedState.preEqFillColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.preEqFillColor = c
+        }
+        if let hex = savedState.postEqFillColorHex, let c = NSColor(srgbHexRGB: hex) {
+            curveView.postEqFillColor = c
+        }
+        curveView.preEqFillEnabled = savedState.preEqFillEnabled
+        curveView.postEqFillEnabled = savedState.postEqFillEnabled
+        if savedState.preEqSpectrumEnabled || (savedState.postEqSpectrumEnabled && !audioEngine.bypassed) {
             curveView.startAnimationIfNeeded()
         }
 
@@ -2468,6 +2481,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         var state = iQualizeState.load()
         state.bypassed = audioEngine.bypassed
         state.save()
+        applyPostEqBypassState()
+        onBypassChanged?()
     }
 
     @objc private func toggleClipping(_ sender: NSButton) {
@@ -2506,8 +2521,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func togglePostEqSpectrum(_ sender: NSButton) {
         let on = sender.state == .on
-        curveView.postEqSpectrumEnabled = on
-        if on { curveView.startAnimationIfNeeded() }
+        let effective = on && !audioEngine.bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
         var state = iQualizeState.load()
         state.postEqSpectrumEnabled = on
         state.save()
@@ -2553,12 +2569,31 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     func syncPostEqSpectrum(_ on: Bool) {
         postEqSpectrumCheckbox.state = on ? .on : .off
-        curveView.postEqSpectrumEnabled = on
-        if on { curveView.startAnimationIfNeeded() }
+        let effective = on && !audioEngine.bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
     }
+
+    func syncPreEqLineColor(_ color: NSColor)  { curveView.preEqLineColor  = color }
+    func syncPreEqFillColor(_ color: NSColor)  { curveView.preEqFillColor  = color }
+    func syncPreEqFillEnabled(_ on: Bool)      { curveView.preEqFillEnabled  = on }
+    func syncPostEqLineColor(_ color: NSColor) { curveView.postEqLineColor = color }
+    func syncPostEqFillColor(_ color: NSColor) { curveView.postEqFillColor = color }
+    func syncPostEqFillEnabled(_ on: Bool)     { curveView.postEqFillEnabled = on }
 
     func syncBypass(_ on: Bool) {
         bypassCheckbox.state = on ? .on : .off
+        applyPostEqBypassState()
+    }
+
+    /// Disables the Post-EQ checkbox and hides the post-EQ spectrum line when EQ is bypassed.
+    /// Restores both when bypass turns off, honoring the user's saved preference.
+    private func applyPostEqBypassState() {
+        let bypassed = audioEngine.bypassed
+        postEqSpectrumCheckbox.isEnabled = !bypassed
+        let effective = (postEqSpectrumCheckbox.state == .on) && !bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
     }
 
     func syncBandwidthMode(asQ: Bool) {
