@@ -227,9 +227,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let image = NSImage(systemSymbolName: "arrow.counterclockwise",
                             accessibilityDescription: "Reset to default")
         let button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        button.bezelStyle = .accessoryBarAction
         button.isBordered = false
         button.toolTip = "Reset to default"
+        button.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 16).isActive = true
         return button
     }
 
