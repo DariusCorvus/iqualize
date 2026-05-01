@@ -123,6 +123,7 @@ Each band: `frequency` (Hz, 20–20000), `gain` (dB), `bandwidth` (octaves, 0.05
 - Presets submenu with checkmarks and active preset name in parent item — changes sync to the EQ window in real time
 - Bypass EQ toggle (Cmd+B) — pass audio through unprocessed; while bypassed, the Post-EQ spectrum line and its color/fill controls are hidden/disabled (post-EQ would otherwise just mirror pre-EQ)
 - Current output device display
+- Help… (Cmd+?) — opens an in-app Help window rendering the README's Features section, with a "View latest on GitHub" link
 - About iQualize — shows version and a "View on GitHub" button that opens the project page in your default browser
 
 ### Settings

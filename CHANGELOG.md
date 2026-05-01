@@ -2,6 +2,12 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.29.0] - 2026-05-02
+
+### Added
+- In-app Help window (Cmd+? or "Help…" in the menu bar dropdown) renders the README's Features section directly inside the app — no need to leave for GitHub. Includes a "View latest on GitHub" link for content newer than your installed build (#60, suggestion #8)
+- Standard macOS **Window** and **Help** menus in the OS menu bar (visible when Hide from Dock is off) — Window auto-lists open iQualize windows for keyboard navigation; Help mirrors the in-app Help shortcut
+
 ## [0.28.0] - 2026-05-01
 
 ### Added

@@ -11,6 +11,11 @@ final class EQWindow: NSWindow {
         if onKeyDown?(event) == true { return }
         super.keyDown(with: event)
     }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if HelpShortcut.handles(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 @available(macOS 14.2, *)

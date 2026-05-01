@@ -72,3 +72,5 @@ If the app fails to launch ("can't be opened" error), debug and fix before proce
 - `Sources/iQualize/SpectrumAnalyzer.swift` — real-time FFT spectrum analysis via Accelerate vDSP
 - `Sources/iQualize/SpectrumData.swift` — lock-free double-buffered audio-to-UI data transfer
 - `Sources/iQualize/ColorHex.swift` — NSColor ↔ #RRGGBB sRGB hex helpers for persisting user-picked spectrum colors
+- `Sources/iQualize/HelpRenderer.swift` — extracts the README's Features section and renders it as HTML via swift-markdown
+- `Sources/iQualize/HelpWindowController.swift` — WKWebView-based Help window; intercepts link clicks to open them in the default browser
