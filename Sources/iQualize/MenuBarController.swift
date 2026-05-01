@@ -8,6 +8,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
     private let presetStore: PresetStore
     private var eqWindowController: EQWindowController?
     private var settingsWindowController: SettingsWindowController?
+    private var helpWindowController: HelpWindowController?
 
     init(audioEngine: AudioEngine, presetStore: PresetStore) {
         self.audioEngine = audioEngine
@@ -137,6 +138,13 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // Help
+        let helpItem = NSMenuItem(title: "Help…", action: #selector(openHelp(_:)),
+                                   keyEquivalent: "?")
+        helpItem.keyEquivalentModifierMask = [.command]
+        helpItem.target = self
+        menu.addItem(helpItem)
+
         // About
         let aboutItem = NSMenuItem(title: "About iQualize", action: #selector(showAbout(_:)),
                                     keyEquivalent: "")
@@ -235,6 +243,14 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         updateIcon()
         eqWindowController?.syncBypass(audioEngine.bypassed)
         settingsWindowController?.syncBypass(audioEngine.bypassed)
+    }
+
+    @objc func openHelp(_ sender: Any?) {
+        if helpWindowController == nil {
+            helpWindowController = HelpWindowController()
+        }
+        helpWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func showAbout(_ sender: NSMenuItem) {

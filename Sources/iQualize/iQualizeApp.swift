@@ -101,6 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menuBarController?.toggleBypassFromMenu()
     }
 
+    @objc func openHelp(_ sender: Any?) {
+        menuBarController?.openHelp(sender)
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleBypass(_:)) {
             menuItem.state = audioEngine?.bypassed == true ? .on : .off
@@ -147,6 +151,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         controlsMenu.addItem(bypassItem)
         controlsMenuItem.submenu = controlsMenu
         mainMenu.addItem(controlsMenuItem)
+
+        // Window menu — standard macOS pattern. NSApp.windowsMenu auto-appends
+        // the names of open titled windows below the standard items.
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        let minimizeItem = windowMenu.addItem(withTitle: "Minimize",
+                                               action: #selector(NSWindow.miniaturize(_:)),
+                                               keyEquivalent: "m")
+        minimizeItem.keyEquivalentModifierMask = [.command]
+        windowMenu.addItem(withTitle: "Zoom",
+                           action: #selector(NSWindow.performZoom(_:)),
+                           keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(withTitle: "Bring All to Front",
+                           action: #selector(NSApplication.arrangeInFront(_:)),
+                           keyEquivalent: "")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        // Help menu — standard macOS pattern. Not registered as NSApp.helpMenu so
+        // macOS doesn't add the Help search popover (we ship our own help window).
+        // Cmd+? itself is handled by HelpAwareWindow.performKeyEquivalent so the
+        // shortcut works regardless of activation policy.
+        let helpMenuItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        let helpEntry = NSMenuItem(title: "iQualize Help",
+                                    action: #selector(openHelp(_:)),
+                                    keyEquivalent: "?")
+        helpEntry.keyEquivalentModifierMask = [.command]
+        helpEntry.target = self
+        helpMenu.addItem(helpEntry)
+        helpMenuItem.submenu = helpMenu
+        mainMenu.addItem(helpMenuItem)
 
         NSApp.mainMenu = mainMenu
     }

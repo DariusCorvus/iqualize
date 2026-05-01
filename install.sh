@@ -29,6 +29,9 @@ fi
 # Copy app icon
 cp -f Sources/iQualize/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# Copy README so the in-app Help window can render the Features section
+cp -f README.md "$APP/Contents/Resources/README.md"
+
 # Always update Info.plist — then re-sign if it changed (plist change invalidates signature)
 if ! cmp -s Sources/iQualize/Info.plist "$APP/Contents/Info.plist"; then
     cp -f Sources/iQualize/Info.plist "$APP/Contents/Info.plist"
