@@ -1263,6 +1263,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
     }
     /// Callback to open the settings window.
     var onOpenSettings: (() -> Void)?
+    /// Callback fired when the user toggles bypass from this window.
+    var onBypassChanged: (() -> Void)?
     private var outputLabel: NSTextField!
     private var newButton: NSButton!
     private var saveControl: NSSegmentedControl!
@@ -1600,6 +1602,7 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         postEqSpectrumCheckbox = NSButton(checkboxWithTitle: "Post-EQ",
                                            target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqSpectrumCheckbox.state = savedState.postEqSpectrumEnabled ? .on : .off
+        postEqSpectrumCheckbox.isEnabled = !audioEngine.bypassed
 
         bandwidthModeSegment = NSSegmentedControl(labels: ["Q", "Oct"], trackingMode: .selectOne,
                                                    target: self, action: #selector(bandwidthModeChanged(_:)))
@@ -1611,8 +1614,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         curveView.preEqSpectrumData = audioEngine.preEqAnalyzer.spectrumData
         curveView.postEqSpectrumData = audioEngine.postEqAnalyzer.spectrumData
         curveView.preEqSpectrumEnabled = savedState.preEqSpectrumEnabled
-        curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled
-        if savedState.preEqSpectrumEnabled || savedState.postEqSpectrumEnabled {
+        curveView.postEqSpectrumEnabled = savedState.postEqSpectrumEnabled && !audioEngine.bypassed
+        if savedState.preEqSpectrumEnabled || (savedState.postEqSpectrumEnabled && !audioEngine.bypassed) {
             curveView.startAnimationIfNeeded()
         }
 
@@ -2468,6 +2471,8 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
         var state = iQualizeState.load()
         state.bypassed = audioEngine.bypassed
         state.save()
+        applyPostEqBypassState()
+        onBypassChanged?()
     }
 
     @objc private func toggleClipping(_ sender: NSButton) {
@@ -2506,8 +2511,9 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     @objc private func togglePostEqSpectrum(_ sender: NSButton) {
         let on = sender.state == .on
-        curveView.postEqSpectrumEnabled = on
-        if on { curveView.startAnimationIfNeeded() }
+        let effective = on && !audioEngine.bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
         var state = iQualizeState.load()
         state.postEqSpectrumEnabled = on
         state.save()
@@ -2553,12 +2559,24 @@ final class EQWindowController: NSWindowController, NSTextFieldDelegate {
 
     func syncPostEqSpectrum(_ on: Bool) {
         postEqSpectrumCheckbox.state = on ? .on : .off
-        curveView.postEqSpectrumEnabled = on
-        if on { curveView.startAnimationIfNeeded() }
+        let effective = on && !audioEngine.bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
     }
 
     func syncBypass(_ on: Bool) {
         bypassCheckbox.state = on ? .on : .off
+        applyPostEqBypassState()
+    }
+
+    /// Disables the Post-EQ checkbox and hides the post-EQ spectrum line when EQ is bypassed.
+    /// Restores both when bypass turns off, honoring the user's saved preference.
+    private func applyPostEqBypassState() {
+        let bypassed = audioEngine.bypassed
+        postEqSpectrumCheckbox.isEnabled = !bypassed
+        let effective = (postEqSpectrumCheckbox.state == .on) && !bypassed
+        curveView.postEqSpectrumEnabled = effective
+        if effective { curveView.startAnimationIfNeeded() }
     }
 
     func syncBandwidthMode(asQ: Bool) {

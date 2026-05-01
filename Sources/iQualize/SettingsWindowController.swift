@@ -52,7 +52,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         maxGainPicker.isEnabled = !state.autoScale
         preEqCheckbox.state = state.preEqSpectrumEnabled ? .on : .off
         postEqCheckbox.state = state.postEqSpectrumEnabled ? .on : .off
+        postEqCheckbox.isEnabled = !audioEngine.bypassed
         bandwidthModeSegment.selectedSegment = state.showBandwidthAsQ ? 0 : 1
+    }
+
+    func syncBypass(_ on: Bool) {
+        postEqCheckbox.isEnabled = !on
     }
 
     private func buildContent() -> NSView {
@@ -113,6 +118,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         postEqCheckbox = NSButton(checkboxWithTitle: "Post-EQ Spectrum",
                                     target: self, action: #selector(togglePostEqSpectrum(_:)))
         postEqCheckbox.state = state.postEqSpectrumEnabled ? .on : .off
+        postEqCheckbox.isEnabled = !audioEngine.bypassed
         mainStack.addArrangedSubview(postEqCheckbox)
 
         let bwRow = NSStackView()
