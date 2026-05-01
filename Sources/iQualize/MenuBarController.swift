@@ -235,7 +235,12 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         alert.informativeText = "System-wide audio equalizer for macOS.\nVersion \(version)"
         alert.alertStyle = .informational
-        alert.runModal()
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "View on GitHub")
+        if alert.runModal() == .alertSecondButtonReturn,
+           let url = URL(string: "https://github.com/DariusCorvus/iqualize") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quit(_ sender: NSMenuItem) {

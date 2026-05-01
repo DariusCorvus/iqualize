@@ -2,6 +2,11 @@
 
 All notable changes to iQualize will be documented in this file.
 
+## [0.28.0] - 2026-05-01
+
+### Added
+- About iQualize alert now has a "View on GitHub" button that opens the project page in your default browser (#60)
+
 ## [0.27.1] - 2026-04-23
 
 ### Fixed
