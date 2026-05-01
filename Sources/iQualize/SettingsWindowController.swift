@@ -44,7 +44,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let contentView = buildContent()
         window.contentView = contentView
-        window.setContentSize(contentView.fittingSize)
+        let fitting = contentView.fittingSize
+        window.setContentSize(NSSize(width: max(fitting.width, 320), height: fitting.height))
     }
 
     @available(*, unavailable)
