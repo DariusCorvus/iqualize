@@ -8,6 +8,7 @@ import SwiftUI
 struct FilterTypePopUpButton: NSViewRepresentable {
     @Binding var selection: FilterType
     var isSelected: Bool
+    var onMouseDown: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -22,6 +23,11 @@ struct FilterTypePopUpButton: NSViewRepresentable {
         button.font = NSFont.systemFont(ofSize: 11)
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectionChanged(_:))
+        button.onMouseDown = onMouseDown
+        // Truncate the title rather than growing the cell when long labels (e.g. "High Shelf") are selected.
+        button.cell?.lineBreakMode = .byTruncatingTail
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         rebuildMenu(on: button)
         syncSelection(button: button)
         return button
@@ -29,8 +35,14 @@ struct FilterTypePopUpButton: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSPopUpButton, context: Context) {
         context.coordinator.parent = self
-        rebuildMenu(on: nsView)
-        syncSelection(button: nsView)
+        (nsView as? BorderlessPopUp)?.onMouseDown = onMouseDown
+        // Don't rebuild items here: the option list is static, and rebuilding while the popup's
+        // menu is being tracked (e.g. when our mouseDown hook flips selectedBandID and triggers
+        // a SwiftUI re-render mid-click) replaces NSMenuItem instances out from under the menu's
+        // hit-tracker and breaks selection commits for items in the middle of the list.
+        if !((nsView as? BorderlessPopUp)?.isMenuTracking ?? false) {
+            syncSelection(button: nsView)
+        }
     }
 
     /// `accent2` from DreamTheme — the light blue used for the composite EQ curve line.
@@ -85,10 +97,21 @@ struct FilterTypePopUpButton: NSViewRepresentable {
 /// NSPopUpButton subclass with no bezel — the surrounding SwiftUI cell draws the styling.
 @available(macOS 14.2, *)
 private final class BorderlessPopUp: NSPopUpButton {
+    var onMouseDown: (() -> Void)?
+    private(set) var isMenuTracking = false
+
     override var intrinsicContentSize: NSSize {
-        var size = super.intrinsicContentSize
-        size.height = 22
-        return size
+        // Width is dictated by the surrounding SwiftUI cell (one column of the readout grid).
+        // Returning noIntrinsicMetric prevents long titles like "High Shelf" from expanding the cell
+        // beyond its peers. The label truncates via the cell's lineBreakMode instead.
+        NSSize(width: NSView.noIntrinsicMetric, height: 22)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
+        isMenuTracking = true
+        super.mouseDown(with: event)
+        isMenuTracking = false
     }
 }
 

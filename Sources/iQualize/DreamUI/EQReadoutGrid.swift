@@ -269,7 +269,8 @@ struct TypeCell: View {
                     vm.updateBand(id: band.id, filterType: newType, registerUndo: true)
                 }
             ),
-            isSelected: isSelected
+            isSelected: isSelected,
+            onMouseDown: { vm.selectedBandID = band.id }
         )
         .frame(maxWidth: .infinity)
         .frame(height: 22)
@@ -283,9 +284,7 @@ struct TypeCell: View {
         )
         .shadow(color: isSelected ? theme.accent.opacity(0.25) : .clear, radius: isSelected ? 5 : 0)
         .opacity(band.muted ? 0.45 : 1.0)
-        .contentShape(Rectangle())
         .onHover { hover = $0 }
-        .onTapGesture { vm.selectedBandID = band.id }
     }
 
     private var label: String {
