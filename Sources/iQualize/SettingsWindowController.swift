@@ -6,6 +6,7 @@ import ServiceManagement
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let audioEngine: AudioEngine
     private weak var eqWindowController: EQWindowController?
+    var onOutputEnabledChanged: (() -> Void)?
 
     private var peakLimiterCheckbox: NSButton!
     private var maxGainPicker: NSPopUpButton!
@@ -23,6 +24,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var preEqFillResetButton: NSButton!
     private var postEqFillResetButton: NSButton!
     private var bandwidthModeSegment: NSSegmentedControl!
+    private var deviceProfileLabel: NSTextField!
+    private var deviceProfileEnabledCheckbox: NSButton!
+    private var saveDeviceProfileButton: NSButton!
+    private var removeDeviceProfileButton: NSButton!
     private var hideFromDockCheckbox: NSButton!
     private var startAtLoginCheckbox: NSButton!
 
@@ -71,10 +76,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         postEqFillColorWell.color = (state.postEqFillColorHex.flatMap(NSColor.init(srgbHexRGB:))) ?? .systemOrange
         applyPostEqEnabled(!audioEngine.bypassed)
         bandwidthModeSegment.selectedSegment = state.showBandwidthAsQ ? 0 : 1
+        updateDeviceProfileControls()
     }
 
     func syncBypass(_ on: Bool) {
         applyPostEqEnabled(!on)
+    }
+
+    func syncDeviceProfile() {
+        updateDeviceProfileControls()
     }
 
     private func applyPostEqEnabled(_ enabled: Bool) {
@@ -192,6 +202,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         mainStack.addArrangedSubview(bwRow)
 
+        // ── Output Profile ──
+        let profileHeader = makeSectionHeader("Output Profile")
+        mainStack.addArrangedSubview(profileHeader)
+
+        deviceProfileLabel = NSTextField(labelWithString: "")
+        deviceProfileLabel.font = .systemFont(ofSize: 12)
+        deviceProfileLabel.textColor = .secondaryLabelColor
+        deviceProfileLabel.maximumNumberOfLines = 2
+        deviceProfileLabel.lineBreakMode = .byWordWrapping
+        deviceProfileLabel.preferredMaxLayoutWidth = 300
+        mainStack.addArrangedSubview(deviceProfileLabel)
+
+        deviceProfileEnabledCheckbox = NSButton(checkboxWithTitle: "Run iQualize on This Output",
+                                                target: self, action: #selector(toggleCurrentOutputEnabled(_:)))
+        deviceProfileEnabledCheckbox.state = audioEngine.isRunning ? .on : .off
+        mainStack.addArrangedSubview(deviceProfileEnabledCheckbox)
+
+        let deviceProfileRow = NSStackView()
+        deviceProfileRow.orientation = .horizontal
+        deviceProfileRow.spacing = 8
+
+        saveDeviceProfileButton = NSButton(title: "Save Current Output Profile",
+                                           target: self, action: #selector(saveCurrentOutputProfile(_:)))
+        deviceProfileRow.addArrangedSubview(saveDeviceProfileButton)
+
+        removeDeviceProfileButton = NSButton(title: "Remove",
+                                             target: self, action: #selector(removeCurrentOutputProfile(_:)))
+        deviceProfileRow.addArrangedSubview(removeDeviceProfileButton)
+
+        mainStack.addArrangedSubview(deviceProfileRow)
+        updateDeviceProfileControls()
+
         // ── General ──
         let generalHeader = makeSectionHeader("General")
         mainStack.addArrangedSubview(generalHeader)
@@ -266,6 +308,36 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         fillRow.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 0)
         group.addArrangedSubview(fillRow)
         return group
+    }
+
+    private func updateDeviceProfileControls() {
+        guard deviceProfileLabel != nil else { return }
+        let uid = audioEngine.outputDeviceUID
+        let deviceName = audioEngine.outputDeviceName
+        let hasDevice = !uid.isEmpty
+
+        deviceProfileEnabledCheckbox.isEnabled = hasDevice
+        deviceProfileEnabledCheckbox.state = audioEngine.isRunning ? .on : .off
+        saveDeviceProfileButton.isEnabled = hasDevice
+        removeDeviceProfileButton.isEnabled = hasDevice && OutputDeviceProfileStore.profile(for: uid) != nil
+
+        guard hasDevice else {
+            deviceProfileLabel.stringValue = "No output device profile is available."
+            return
+        }
+
+        if let profile = OutputDeviceProfileStore.profile(for: uid) {
+            let enabled = profile.isEnabled ? "On" : "Off"
+            let bypass = profile.bypassed ? "Bypass on" : "Bypass off"
+            deviceProfileLabel.stringValue = "\(deviceName): \(enabled), \(profile.presetName), \(bypass), In \(formatSigned(profile.inputGainDB))"
+        } else {
+            let running = audioEngine.isRunning ? "iQualize is currently running" : "iQualize audio is off"
+            deviceProfileLabel.stringValue = "\(deviceName): no saved profile. \(running) for this output."
+        }
+    }
+
+    private func formatSigned(_ value: Float) -> String {
+        String(format: "%@%.1f dB", value >= 0 ? "+" : "", value)
     }
 
     // MARK: - Actions
@@ -398,6 +470,45 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         state.showBandwidthAsQ = asQ
         state.save()
         eqWindowController?.syncBandwidthMode(asQ: asQ)
+    }
+
+    @objc private func toggleCurrentOutputEnabled(_ sender: NSButton) {
+        audioEngine.setEnabled(sender.state == .on)
+
+        var state = iQualizeState.load()
+        state.isEnabled = audioEngine.isRunning
+        state.save()
+
+        if var profile = OutputDeviceProfileStore.profile(for: audioEngine.outputDeviceUID) {
+            profile.isEnabled = audioEngine.isRunning
+            profile.presetID = audioEngine.activePreset.id
+            profile.presetName = audioEngine.activePreset.name
+            profile.bypassed = audioEngine.bypassed
+            profile.inputGainDB = audioEngine.inputGainDB
+            OutputDeviceProfileStore.save(profile)
+        }
+
+        updateDeviceProfileControls()
+        onOutputEnabledChanged?()
+    }
+
+    @objc private func saveCurrentOutputProfile(_ sender: NSButton) {
+        let profile = OutputDeviceProfile(
+            deviceUID: audioEngine.outputDeviceUID,
+            deviceName: audioEngine.outputDeviceName,
+            isEnabled: audioEngine.isRunning,
+            presetID: audioEngine.activePreset.id,
+            presetName: audioEngine.activePreset.name,
+            bypassed: audioEngine.bypassed,
+            inputGainDB: audioEngine.inputGainDB
+        )
+        OutputDeviceProfileStore.save(profile)
+        updateDeviceProfileControls()
+    }
+
+    @objc private func removeCurrentOutputProfile(_ sender: NSButton) {
+        OutputDeviceProfileStore.delete(deviceUID: audioEngine.outputDeviceUID)
+        updateDeviceProfileControls()
     }
 
     @objc private func toggleHideFromDock(_ sender: NSButton) {

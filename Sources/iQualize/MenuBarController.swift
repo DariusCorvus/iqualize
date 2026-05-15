@@ -22,20 +22,27 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         statusItem.menu = menu
         updateIcon()
 
+        audioEngine.shouldRunForOutputDevice = { uid in
+            OutputDeviceProfileStore.profile(for: uid)?.isEnabled ?? !OutputDeviceProfileStore.hasProfiles
+        }
+
         // Rebuild menu on device changes
         audioEngine.onStateChange = { [weak self] in
+            self?.applyOutputDeviceProfileIfAvailable()
             self?.updateIcon()
         }
 
         // Restore saved state and always start EQ
         if let preset = presetStore.preset(for: state.selectedPresetID) {
-            audioEngine.activePreset = preset
+            audioEngine.applyPreset(preset)
         }
         audioEngine.peakLimiter = state.peakLimiter
         audioEngine.maxGainDB = state.maxGainDB
         audioEngine.bypassed = state.bypassed
         audioEngine.balance = state.balance
-        audioEngine.setEnabled(true)
+        audioEngine.inputGainDB = state.inputGainDB
+        audioEngine.outputGainDB = state.outputGainDB
+        applyOutputDeviceProfileIfAvailable()
         updateIcon()
 
         // Restore EQ window if it was open when the app last quit
@@ -163,9 +170,11 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         guard let uuidString = sender.representedObject as? String,
               let id = UUID(uuidString: uuidString),
               let preset = presetStore.preset(for: id) else { return }
-        audioEngine.activePreset = preset
+        audioEngine.applyPreset(preset)
         var s = iQualizeState.load()
         s.selectedPresetID = preset.id
+        s.inputGainDB = audioEngine.inputGainDB
+        s.splitChannelEnabled = preset.isSplitChannel
         s.save()
         eqWindowController?.syncUIToPreset()
     }
@@ -178,6 +187,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(
                 audioEngine: audioEngine, eqWindowController: eqWindowController)
+            settingsWindowController?.onOutputEnabledChanged = { [weak self] in self?.updateIcon() }
         }
         settingsWindowController?.updateEQWindowController(eqWindowController)
         settingsWindowController?.showWindow(nil)
@@ -229,6 +239,7 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(
                 audioEngine: audioEngine, eqWindowController: eqWindowController)
+            settingsWindowController?.onOutputEnabledChanged = { [weak self] in self?.updateIcon() }
         }
         settingsWindowController?.updateEQWindowController(eqWindowController)
         settingsWindowController?.showWindow(nil)
@@ -243,6 +254,64 @@ final class MenuBarController: NSObject, @preconcurrency NSMenuDelegate {
         updateIcon()
         eqWindowController?.syncBypass(audioEngine.bypassed)
         settingsWindowController?.syncBypass(audioEngine.bypassed)
+    }
+
+    private func applyOutputDeviceProfileIfAvailable() {
+        guard let profile = OutputDeviceProfileStore.profile(for: audioEngine.outputDeviceUID) else {
+            if OutputDeviceProfileStore.hasProfiles {
+                applyUnprofiledOutputDefaults()
+            } else {
+                applyLegacyOutputDefaults()
+            }
+            settingsWindowController?.syncDeviceProfile()
+            return
+        }
+
+        var state = iQualizeState.load()
+        if let presetID = profile.presetID,
+           let preset = presetStore.preset(for: presetID) {
+            audioEngine.applyPreset(preset)
+            state.selectedPresetID = preset.id
+            state.splitChannelEnabled = preset.isSplitChannel
+        }
+
+        audioEngine.bypassed = profile.bypassed
+        audioEngine.inputGainDB = profile.inputGainDB
+        audioEngine.setEnabled(profile.isEnabled)
+        state.isEnabled = profile.isEnabled
+        state.bypassed = profile.bypassed
+        state.inputGainDB = profile.inputGainDB
+        state.save()
+
+        eqWindowController?.syncUIToPreset()
+        settingsWindowController?.syncBypass(audioEngine.bypassed)
+        settingsWindowController?.syncDeviceProfile()
+    }
+
+    private func applyUnprofiledOutputDefaults() {
+        audioEngine.applyPreset(.flat)
+        audioEngine.bypassed = true
+        audioEngine.inputGainDB = 0
+        audioEngine.setEnabled(false)
+
+        var state = iQualizeState.load()
+        state.isEnabled = false
+        state.selectedPresetID = EQPresetData.flat.id
+        state.splitChannelEnabled = false
+        state.bypassed = true
+        state.inputGainDB = 0
+        state.save()
+
+        eqWindowController?.syncUIToPreset()
+        settingsWindowController?.syncBypass(audioEngine.bypassed)
+    }
+
+    private func applyLegacyOutputDefaults() {
+        audioEngine.setEnabled(true)
+
+        var state = iQualizeState.load()
+        state.isEnabled = audioEngine.isRunning
+        state.save()
     }
 
     @objc func openHelp(_ sender: Any?) {

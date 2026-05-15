@@ -96,7 +96,40 @@ struct EQPresetData: Codable, Equatable, Sendable, Identifiable {
     /// Right channel bands. When nil, the preset is in linked (stereo) mode.
     /// When non-nil, `bands` represents the left channel and `rightBands` the right.
     var rightBands: [EQBand]?
+    var inputGainDB: Float
     let isBuiltIn: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, bands, rightBands, inputGainDB, isBuiltIn
+    }
+
+    init(id: UUID,
+         name: String,
+         bands: [EQBand],
+         rightBands: [EQBand]? = nil,
+         inputGainDB: Float = 0.0,
+         isBuiltIn: Bool) {
+        self.id = id
+        self.name = name
+        self.bands = bands
+        self.rightBands = rightBands
+        self.inputGainDB = Self.clampInputGain(inputGainDB)
+        self.isBuiltIn = isBuiltIn
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        bands = try container.decode([EQBand].self, forKey: .bands)
+        rightBands = try container.decodeIfPresent([EQBand].self, forKey: .rightBands)
+        inputGainDB = Self.clampInputGain((try? container.decode(Float.self, forKey: .inputGainDB)) ?? 0.0)
+        isBuiltIn = try container.decode(Bool.self, forKey: .isBuiltIn)
+    }
+
+    private static func clampInputGain(_ value: Float) -> Float {
+        max(-24, min(24, value))
+    }
 
     var isFlat: Bool {
         let bandsFlat = bands.allSatisfy { $0.gain == 0 && $0.filterType == .parametric }

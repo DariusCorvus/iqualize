@@ -56,7 +56,7 @@ final class EQWindowController: NSWindowController {
         // Restore active preset.
         let state = iQualizeState.load()
         if let preset = presetStore.preset(for: state.selectedPresetID) {
-            audioEngine.activePreset = preset
+            audioEngine.applyPreset(preset)
             viewModel.syncFromAudioEngine(initial: true)
         }
 
