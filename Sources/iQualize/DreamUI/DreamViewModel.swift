@@ -153,6 +153,16 @@ final class DreamViewModel {
         presetName = preset.name
         activePresetID = preset.id
         isBuiltIn = preset.isBuiltIn
+        bypass = audioEngine.bypassed
+        peakLimiter = audioEngine.peakLimiter
+        inGainDB = audioEngine.inputGainDB
+        outGainDB = audioEngine.outputGainDB
+        balance = audioEngine.balance
+        if preset.isSplitChannel {
+            if channel == .linked { channel = .l }
+        } else {
+            channel = .linked
+        }
         if initial {
             savedSnapshot = preset
             isModified = false
@@ -351,6 +361,7 @@ final class DreamViewModel {
             name: forkName,
             bands: custom.bands,
             rightBands: custom.rightBands,
+            inputGainDB: custom.inputGainDB,
             isBuiltIn: false
         )
         audioEngine.activePreset = newPreset
@@ -366,7 +377,7 @@ final class DreamViewModel {
         undoManager.registerUndo(withTarget: self) { [weak self] target in
             guard let self else { return }
             let redoPreset = self.audioEngine.activePreset
-            self.audioEngine.activePreset = oldPreset
+            self.audioEngine.applyPreset(oldPreset)
             self.syncFromAudioEngine()
             if oldPreset == self.savedSnapshot {
                 self.isModified = false
@@ -503,7 +514,7 @@ final class DreamViewModel {
     func loadPreset(id: UUID) {
         guard let preset = presetStore.preset(for: id) else { return }
         let oldPreset = audioEngine.activePreset
-        audioEngine.activePreset = preset
+        audioEngine.applyPreset(preset)
         // Sync split channel state to match the loaded preset
         if preset.isSplitChannel {
             audioEngine.splitChannelActive = true
@@ -518,13 +529,15 @@ final class DreamViewModel {
         registerUndo(actionName: "Load Preset", oldPreset: oldPreset)
         var s = iQualizeState.load()
         s.selectedPresetID = preset.id
+        s.inputGainDB = audioEngine.inputGainDB
+        s.splitChannelEnabled = preset.isSplitChannel
         s.save()
     }
 
     func resetToSnapshot() {
         guard let snap = savedSnapshot else { return }
         let old = audioEngine.activePreset
-        audioEngine.activePreset = snap
+        audioEngine.applyPreset(snap)
         syncFromAudioEngine()
         isModified = false
         registerUndo(actionName: "Reset Preset", oldPreset: old)
@@ -538,11 +551,12 @@ final class DreamViewModel {
             id: UUID(),
             name: "Custom EQ \(n)",
             bands: EQPresetData.flat.bands,
+            inputGainDB: 0.0,
             isBuiltIn: false
         )
         presetStore.saveCustomPreset(preset)
         let old = audioEngine.activePreset
-        audioEngine.activePreset = preset
+        audioEngine.applyPreset(preset)
         savedSnapshot = preset
         isModified = false
         syncFromAudioEngine()
@@ -558,7 +572,9 @@ final class DreamViewModel {
         var preset = audioEngine.activePreset
         preset.bands = bands
         preset.rightBands = rightBands
+        preset.inputGainDB = inGainDB
         presetStore.saveCustomPreset(preset)
+        audioEngine.activePreset = preset
         savedSnapshot = preset
         isModified = false
     }
@@ -579,11 +595,12 @@ final class DreamViewModel {
             name: resolvedName,
             bands: bands,
             rightBands: rightBands,
+            inputGainDB: inGainDB,
             isBuiltIn: false
         )
         presetStore.saveCustomPreset(newPreset)
         let old = audioEngine.activePreset
-        audioEngine.activePreset = newPreset
+        audioEngine.applyPreset(newPreset)
         savedSnapshot = newPreset
         isModified = false
         syncFromAudioEngine()
@@ -594,7 +611,7 @@ final class DreamViewModel {
         guard !isBuiltIn else { return }
         presetStore.deleteCustomPreset(id: activePresetID)
         let old = audioEngine.activePreset
-        audioEngine.activePreset = .flat
+        audioEngine.applyPreset(.flat)
         savedSnapshot = .flat
         isModified = false
         syncFromAudioEngine()
@@ -728,6 +745,7 @@ final class DreamViewModel {
                     name: importName,
                     bands: decoded.bands,
                     rightBands: decoded.rightBands,
+                    inputGainDB: decoded.inputGainDB,
                     isBuiltIn: false
                 )
                 presetStore.saveCustomPreset(preset)
@@ -741,7 +759,7 @@ final class DreamViewModel {
 
         if let preset = lastImported {
             let old = audioEngine.activePreset
-            audioEngine.activePreset = preset
+            audioEngine.applyPreset(preset)
             savedSnapshot = preset
             isModified = false
             syncFromAudioEngine()
@@ -783,6 +801,12 @@ final class DreamViewModel {
 
     func applyInputGain() {
         audioEngine.inputGainDB = inGainDB
+        var preset = audioEngine.activePreset
+        preset.inputGainDB = inGainDB
+        audioEngine.activePreset = preset
+        let wasModified = isModified
+        isModified = preset != savedSnapshot
+        if wasModified != isModified { onTitleShouldUpdate?() }
         persistFooterToggles()
     }
 

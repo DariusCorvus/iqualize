@@ -86,6 +86,7 @@ private func renderCallback(
 final class AudioEngine {
     private(set) var isRunning = false
     private(set) var outputDeviceName = "Unknown"
+    private(set) var outputDeviceUID = ""
     private(set) var error: String?
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
@@ -101,6 +102,7 @@ final class AudioEngine {
     @ObservationIgnored
     nonisolated(unsafe) private var deviceChangeListenerBlock: AudioObjectPropertyListenerBlock?
     var onStateChange: (() -> Void)?
+    var shouldRunForOutputDevice: ((String) -> Bool)?
 
     // Spectrum analyzers — one per tap point
     let preEqAnalyzer = SpectrumAnalyzer()
@@ -151,8 +153,10 @@ final class AudioEngine {
     init() {
         do {
             let deviceID = try getDefaultOutputDeviceID()
+            outputDeviceUID = try getDeviceUID(deviceID)
             outputDeviceName = try getDeviceName(deviceID)
         } catch {
+            outputDeviceUID = ""
             outputDeviceName = "Unknown"
         }
         installDeviceChangeListener()
@@ -180,6 +184,7 @@ final class AudioEngine {
 
         let outputDeviceID = try getDefaultOutputDeviceID()
         let outputUID = try getDeviceUID(outputDeviceID)
+        outputDeviceUID = outputUID
         outputDeviceName = try getDeviceName(outputDeviceID)
 
         // 1. Translate our PID → AudioObjectID so we can exclude ourselves from the tap.
@@ -468,6 +473,12 @@ final class AudioEngine {
         }
     }
 
+    func applyPreset(_ preset: EQPresetData) {
+        activePreset = preset
+        inputGainDB = preset.inputGainDB
+        splitChannelActive = preset.isSplitChannel
+    }
+
     private func applyBands(from old: EQPresetData? = nil) {
         guard let eq else { return }
 
@@ -564,17 +575,21 @@ final class AudioEngine {
         guard !isRestarting else { return }
 
         if let deviceID = try? getDefaultOutputDeviceID(),
+           let uid = try? getDeviceUID(deviceID),
            let name = try? getDeviceName(deviceID) {
+            outputDeviceUID = uid
             outputDeviceName = name
         }
 
         if isRunning {
             isRestarting = true
             stop()
-            do {
-                try start()
-            } catch {
-                self.error = error.localizedDescription
+            if shouldRunForOutputDevice?(outputDeviceUID) ?? true {
+                do {
+                    try start()
+                } catch {
+                    self.error = error.localizedDescription
+                }
             }
             isRestarting = false
         }
