@@ -176,6 +176,19 @@ final class CaptureClient: @unchecked Sendable {
         dataPtr = nil
     }
 
+    /// Jump the read head to within `targetLagSamples` of the current write
+    /// head. Throws away buffered audio between the old read position and
+    /// the recent write. Called when the engine resumes from silence-yield —
+    /// during the pause the helper kept filling the ring with silence and
+    /// then with whatever came next, so the read head was lagging by up to
+    /// the full ring (~170ms). Resyncing removes that latency.
+    func resyncReadHead(targetLagSamples: Int = 256) {
+        guard let header = headerPtr else { return }
+        let writeHead = header.pointee.writeHead
+        let lag = UInt64(max(0, targetLagSamples))
+        header.pointee.readHead = writeHead > lag ? writeHead &- lag : 0
+    }
+
     /// Peek at the most recent `window` samples without advancing the read
     /// head. Returns the maximum absolute amplitude (∈ [0, 1]). Used by the
     /// silence-yield monitor to decide whether to keep the AVAudioEngine
@@ -205,6 +218,13 @@ final class CaptureClient: @unchecked Sendable {
         guard let header = headerPtr, let data = dataPtr else { return 0 }
         let writeHead = header.pointee.writeHead
         var readHead = header.pointee.readHead
+        let capacity = UInt64(capacityFloats)
+        // If the reader fell more than `capacity` samples behind the writer,
+        // the writer has wrapped over data we never read. Skip forward so we
+        // start at recent audio instead of returning corrupted (wrapped) data.
+        if writeHead &- readHead > capacity {
+            readHead = writeHead &- capacity
+        }
         let avail = Int(writeHead &- readHead)
         let toRead = min(count, avail)
         let m = mask

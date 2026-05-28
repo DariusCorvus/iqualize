@@ -15,6 +15,36 @@ func capture_helperURL() -> URL {
         .appendingPathComponent("Contents/Helpers/iQualizeCapture")
 }
 
+/// Set the I/O buffer frame size on a device's output scope. Lower values
+/// reduce latency at the cost of higher CPU and risk of dropouts. Devices
+/// silently clamp to their allowed range. We ignore failures because some
+/// devices don't permit changing this at all.
+func setBufferFrameSize(forDevice deviceID: AudioDeviceID, frames: UInt32) {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyBufferFrameSize,
+        mScope: kAudioObjectPropertyScopeOutput,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var size = frames
+    let status = AudioObjectSetPropertyData(
+        deviceID, &addr, 0, nil,
+        UInt32(MemoryLayout<UInt32>.size), &size
+    )
+    if status != noErr {
+        os_log(.default, log: appLog,
+               "setBufferFrameSize(%{public}u) on device %{public}d failed: OSStatus %{public}d (ignored)",
+               frames, deviceID, status)
+        return
+    }
+    // Read back the actual size (device may have clamped).
+    var actual: UInt32 = 0
+    var asize = UInt32(MemoryLayout<UInt32>.size)
+    AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &asize, &actual)
+    os_log(.default, log: appLog,
+           "output buffer frame size: requested=%{public}u actual=%{public}u",
+           frames, actual)
+}
+
 // MARK: - Real-time Audio Callbacks (free functions, no actor isolation)
 // These run on Core Audio's IO thread. They MUST be free functions — not closures
 // defined inside a @MainActor class — because Swift 6 strict concurrency inserts
@@ -243,6 +273,14 @@ final class AudioEngine {
         os_log(.default, log: appLog,
                "capture helper sr: %{public}.0f  ch: %{public}u  output: %{public}@",
                sampleRate, channels, outputDeviceName as NSString)
+
+        // Reduce the output device's I/O buffer size so the AVAudioEngine
+        // output AU runs at low latency. Default macOS buffer is 512 frames
+        // (~10.7ms at 48kHz); 256 cuts that roughly in half. Smaller would
+        // be even better but risks dropouts under load. This only affects
+        // devices that allow setting BufferFrameSize and we ignore failures
+        // — some devices clamp to their own minimum.
+        setBufferFrameSize(forDevice: outputDeviceID, frames: 256)
 
         let avEngine = AVAudioEngine()
 
@@ -487,7 +525,9 @@ final class AudioEngine {
         stopSilenceMonitor()  // belt-and-suspenders
         engineSilenced = false
         lastNonSilentDate = Date()
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        // 50ms cadence: when audio resumes after silence, we want to wake the
+        // engine fast. 250ms felt like a noticeable half-second gap to users.
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.checkSilence()
             }
@@ -510,8 +550,11 @@ final class AudioEngine {
         if peak >= AudioEngine.silenceThreshold {
             lastNonSilentDate = now
             if engineSilenced {
-                // Audio returned — start engine. It rebinds to whatever the
-                // current default output is (typically AirPods returning).
+                // Audio returned — discard the stale buffered samples that
+                // accumulated while we were paused, then resume. Without
+                // resync we'd play back up to ~170ms of old audio before
+                // catching up to the fresh data.
+                client.resyncReadHead(targetLagSamples: 256)
                 do {
                     try engine.start()
                     engineSilenced = false
@@ -524,10 +567,11 @@ final class AudioEngine {
             }
         } else if !engineSilenced
                   && now.timeIntervalSince(lastNonSilentDate) >= AudioEngine.silenceGracePeriod {
-            // Silent for the grace period — stop the engine, freeing the
-            // default device so macOS doesn't have to switch defaults when
-            // AirPods leave.
-            engine.stop()
+            // Silent for the grace period — pause the engine. pause() keeps
+            // the engine graph "warm" so resume is much faster than after a
+            // full stop(). Empirically still releases the output device, so
+            // AirPods can still migrate to iPhone during paused state.
+            engine.pause()
             engineSilenced = true
             os_log(.default, log: appLog, "engine paused (sustained silence)")
         }
