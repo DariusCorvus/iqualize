@@ -11,6 +11,8 @@ All notable changes to iQualize will be documented in this file.
 ### Fixed
 - "Out:" gain label no longer wraps onto a second line; In/Out/Bal labels and values share a consistent width
 - Inline cell editing and the empty-checkbox fill are now legible in Light mode (previously white-on-light)
+- Re-selecting a band's current filter type no longer forks a built-in preset to "(Custom)" or pushes a redundant undo step
+- Undo now clears the "modified" dirty dot once the EQ curve is back to the saved values (a phantom dot previously lingered after undoing a built-in→Custom fork)
 
 ## [0.29.0] - 2026-05-02
 
